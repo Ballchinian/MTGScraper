@@ -1,0 +1,39 @@
+#the daily card data update. downloads scryfall's bulk file, embeds anything
+#new or changed and writes it into the railway database. this is also how the
+#one time initial seed happens: run it by hand from the actions tab and it
+#fills the empty database from scratch
+
+name: update card data
+
+on:
+  schedule:
+    - cron: "0 9 * * *"  #9am utc every day, scryfall rebuilds their bulk files overnight
+  workflow_dispatch:  #the "run workflow" button, for the initial seed or manual runs
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingest/requirements.txt
+
+      #the embedding model is ~90mb, no point pulling it from huggingface every day
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: all-MiniLM-L6-v2
+
+      #plain "pip install torch" grabs a 2gb+ cuda build we cant even use here,
+      #installing the cpu wheel first means the requirements step sees torch
+      #already satisfied and skips it
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r ingest/requirements.txt
+
+      - run: python -m ingest.update
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

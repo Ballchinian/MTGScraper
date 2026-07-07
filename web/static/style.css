@@ -1,0 +1,201 @@
+/* trying to match scryfall's look as close as i can without straight up copying it */
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: #f5f6fa;
+    color: #16161d;
+}
+
+header {
+    background: #241d2e;
+    padding: 12px 16px;
+}
+
+.header-inner {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.site-name {
+    color: #fff;
+    font-weight: bold;
+    font-size: 20px;
+    text-decoration: none;
+    letter-spacing: 0.5px;
+}
+
+.search-form {
+    flex: 1;
+    display: flex;
+    position: relative;
+}
+
+.search-form input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 4px 0 0 4px;
+    font-size: 15px;
+    outline: none;
+}
+
+.search-form button {
+    background: #7857a5;
+    color: white;
+    border: 0;
+    padding: 8px 18px;
+    border-radius: 0 4px 4px 0;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.search-form button:hover { background: #8a68bb; }
+
+/* the autocomplete dropdown, sits right under the search bar */
+#suggestions {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #d8d5de;
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 10;
+}
+
+.suggestion {
+    padding: 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.suggestion:hover { background: #efeaf6; }
+
+main {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    min-height: 70vh;
+}
+
+.hero {
+    text-align: center;
+    padding: 70px 20px;
+    color: #43404a;
+}
+
+.hero h1 { margin-bottom: 8px; }
+
+.searched-card {
+    display: flex;
+    gap: 20px;
+    background: white;
+    border: 1px solid #e0dee5;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.searched-card img {
+    width: 240px;
+    border-radius: 11px; /* real cards have rounded corners */
+    flex-shrink: 0;
+}
+
+.searched-info h1 { margin: 4px 0 2px 0; }
+
+.mana { font-size: 15px; color: #5f5b66; font-weight: normal; }
+
+.type-line { color: #5f5b66; margin: 4px 0 12px 0; }
+
+.oracle {
+    white-space: pre-line; /* keeps the ability lines on their own lines */
+    line-height: 1.55;
+}
+
+h2 {
+    margin-top: 36px;
+    border-bottom: 1px solid #d8d5de;
+    padding-bottom: 8px;
+}
+
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.result img {
+    width: 100%;
+    display: block;
+    border-radius: 4.75% / 3.5%; /* the magic card corner radius, took a while to eyeball this */
+    transition: transform .1s;
+}
+
+.result img:hover { transform: scale(1.03); }
+
+.result-name {
+    font-weight: 600;
+    margin-top: 8px;
+    font-size: 14px;
+}
+
+.percent {
+    float: right;
+    color: #7857a5;
+}
+
+.match-line {
+    color: #6c6874;
+    font-size: 12.5px;
+    font-style: italic;
+    margin-top: 2px;
+}
+
+.load-more-wrap {
+    text-align: center;
+    margin: 28px 0 8px 0;
+}
+
+#load-more {
+    background: #7857a5;
+    color: white;
+    border: 0;
+    border-radius: 4px;
+    padding: 10px 32px;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+#load-more:hover { background: #8a68bb; }
+
+.message {
+    background: #fff3f3;
+    border: 1px solid #e8c4c4;
+    padding: 12px 16px;
+    border-radius: 4px;
+}
+
+footer {
+    text-align: center;
+    color: #8a8792;
+    font-size: 12px;
+    padding: 24px;
+}
+
+footer a { color: #7857a5; }
+
+@media (max-width: 600px) {
+    .searched-card { flex-direction: column; }
+    .searched-card img { width: 100%; }
+    .header-inner { flex-wrap: wrap; }
+}

@@ -1,0 +1,4 @@
+flask
+gunicorn
+psycopg[binary,pool]
+pgvector

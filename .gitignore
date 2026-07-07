@@ -4,6 +4,10 @@ cards.json
 index.json
 embeddings.npy
 
+#the ingest script downloads this fresh every run and deletes it after,
+#but just in case a run dies halfway
+oracle-cards.json
+
 #python junk
 __pycache__/
 *.pyc
