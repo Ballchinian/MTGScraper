@@ -37,4 +37,4 @@ jobs:
       - run: python -m ingest.update
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-                          PYTHONUNBUFFERED: "1"  #otherwise the log messages pile up and appear all at once at the end
+          PYTHONUNBUFFERED: "1"  #otherwise the log messages pile up and appear all at once at the end

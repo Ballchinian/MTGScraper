@@ -117,10 +117,97 @@ main {
 
 .type-line { color: #5f5b66; margin: 4px 0 12px 0; }
 
-.oracle {
-    white-space: pre-line; /* keeps the ability lines on their own lines */
-    line-height: 1.55;
+/* the rules text is one div per line now so lines can be clicked. the
+   searchable ones are the line picker, the plain ones just sit there */
+.oracle { line-height: 1.55; }
+
+.oracle-plain {
+    padding: 2px 6px;
+    margin: 2px 0;
 }
+
+.oracle-line {
+    padding: 2px 6px;
+    margin: 2px 0;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.oracle-line:hover { background: #efeaf6; }
+
+.oracle-line.picked {
+    background: #efeaf6;
+    box-shadow: inset 3px 0 0 #7857a5;
+}
+
+.line-hint {
+    color: #8a8792;
+    font-size: 12.5px;
+    margin: 10px 0 0 0;
+}
+
+/* the filter bar, a white strip under the searched card like scryfall's
+   search options */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    background: white;
+    border: 1px solid #e0dee5;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-top: 20px;
+    font-size: 14px;
+}
+
+.filter-bar label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.filter-colors {
+    display: inline-flex;
+    gap: 8px;
+    font-weight: 600;
+}
+
+/* rough mana colors so the letters read at a glance */
+.ci-w { color: #b3a13d; }
+.ci-u { color: #1e6fbf; }
+.ci-b { color: #4a4650; }
+.ci-r { color: #c23c2e; }
+.ci-g { color: #2c7d4e; }
+
+.filter-prices { display: inline-flex; align-items: center; gap: 6px; }
+
+.filter-bar input[type="number"] {
+    width: 72px;
+    padding: 4px 6px;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+}
+
+.filter-bar select {
+    padding: 4px 6px;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    background: white;
+}
+
+.filter-bar button {
+    background: #7857a5;
+    color: white;
+    border: 0;
+    border-radius: 4px;
+    padding: 6px 16px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.filter-bar button:hover { background: #8a68bb; }
 
 h2 {
     margin-top: 36px;
@@ -154,11 +241,25 @@ h2 {
     color: #7857a5;
 }
 
+.result-price {
+    color: #2c7d4e;
+    font-size: 13px;
+    margin-top: 2px;
+}
+
 .match-line {
     color: #6c6874;
     font-size: 12.5px;
     font-style: italic;
     margin-top: 2px;
+}
+
+/* the "+2 more matching lines" hint, the pairs live in its tooltip */
+.more-lines {
+    color: #7857a5;
+    font-size: 12px;
+    margin-top: 2px;
+    cursor: help;
 }
 
 .load-more-wrap {
@@ -177,6 +278,18 @@ h2 {
 }
 
 #load-more:hover { background: #8a68bb; }
+
+/* the line in the grid where results drop below the minimum match. spans
+   the full row so it reads as a section break */
+.weak-divider {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: #8a8792;
+    font-size: 13px;
+    border-bottom: 1px solid #d8d5de;
+    padding-bottom: 6px;
+    margin-top: 8px;
+}
 
 .message {
     background: #fff3f3;

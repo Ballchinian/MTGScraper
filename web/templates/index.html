@@ -2,17 +2,17 @@
 <html>
     <head>
         <meta charset="utf-8">
-        <title>MTG Scraper</title>
+        <title>Slopfall</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" type="image/png" href="{{ url_for('static', filename='MTGScraperLogo.png') }}">
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='SlopfallLogo.png') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     </head>
     <body>
 
         <header>
             <div class="header-inner">
-                <img class="logo" src="{{ url_for('static', filename='MTGScraperLogo.png') }}" alt="MTG Scraper logo" width="50px" height="50px">
-                <a class="site-name" href="/">MTG Scraper</a>
+                <img class="logo" src="{{ url_for('static', filename='SlopfallLogo.png') }}" alt="Slopfall logo" width="50px" height="50px">
+                <a class="site-name" href="/">Slopfall</a>
                 <form action="/" method="get" class="search-form" autocomplete="off">
                     <input type="text" name="q" placeholder="Search for a card by name..." value="{{ query or '' }}" autofocus>
                     <button type="submit">Search</button>
@@ -30,11 +30,66 @@
                     <div class="searched-info">
                         <h1>{{ card.name }} <span class="mana">{{ card.mana_cost }}</span></h1>
                         <p class="type-line">{{ card.type_line }}</p>
-                        <p class="oracle">{{ card.text }}</p>
+                        <div class="oracle">
+                            {% for line in card_lines %}
+                            {% if line.searchable %}
+                            <div class="oracle-line{% if line.selected %} picked{% endif %}" data-idx="{{ line.idx }}">{{ line.text }}</div>
+                            {% else %}
+                            <div class="oracle-plain">{{ line.text }}</div>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        <p class="line-hint">
+                            {% if picked_count %}
+                            searching only the highlighted lines, click a line to pick or unpick it
+                            {% else %}
+                            click a line to search just that ability, click more to combine them
+                            {% endif %}
+                        </p>
                     </div>
                 </div>
 
+                <form class="filter-bar" action="/" method="get">
+                    <input type="hidden" name="q" value="{{ query }}">
+                    {% if request.args.get('lines') %}
+                    <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
+                    {% endif %}
+                    <span class="filter-colors" title="color identity, results must fit inside what you pick">
+                        <label class="ci-w"><input type="checkbox" name="colors" value="W" {% if 'W' in request.args.getlist('colors') %}checked{% endif %}>W</label>
+                        <label class="ci-u"><input type="checkbox" name="colors" value="U" {% if 'U' in request.args.getlist('colors') %}checked{% endif %}>U</label>
+                        <label class="ci-b"><input type="checkbox" name="colors" value="B" {% if 'B' in request.args.getlist('colors') %}checked{% endif %}>B</label>
+                        <label class="ci-r"><input type="checkbox" name="colors" value="R" {% if 'R' in request.args.getlist('colors') %}checked{% endif %}>R</label>
+                        <label class="ci-g"><input type="checkbox" name="colors" value="G" {% if 'G' in request.args.getlist('colors') %}checked{% endif %}>G</label>
+                    </span>
+                    <span class="filter-prices">
+                        $ <input type="number" name="pmin" min="0" step="0.01" placeholder="min" value="{{ request.args.get('pmin', '') }}">
+                        to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" value="{{ request.args.get('pmax', '') }}">
+                    </span>
+                    <span class="filter-prices" title="mana value (converted mana cost)">
+                        MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" value="{{ request.args.get('mvmin', '') }}">
+                        to <input type="number" name="mvmax" min="0" step="1" placeholder="max" value="{{ request.args.get('mvmax', '') }}">
+                    </span>
+                    <select name="type">
+                        <option value="">Any type</option>
+                        {% for t in types %}
+                        <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t }}</option>
+                        {% endfor %}
+                    </select>
+                    <label><input type="checkbox" name="gc" value="1" {% if request.args.get('gc') %}checked{% endif %}>hide game changers</label>
+                    <label><input type="checkbox" name="legal" value="1" {% if request.args.get('legal') %}checked{% endif %}>commander legal only</label>
+                    <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
+                    <select name="sort">
+                        <option value="best">Best match</option>
+                        <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
+                        <option value="pricey" {% if request.args.get('sort') == 'pricey' %}selected{% endif %}>Price: high to low</option>
+                    </select>
+                    <button type="submit">Apply</button>
+                </form>
+
                 <h2>Cards that do something similar</h2>
+                {% if not results %}
+                <p class="message">Nothing matched with the current filters{% if min_pct > 0 %} at {{ min_pct }}%+ match{% endif %}. Try loosening them.</p>
+                {% endif %}
                 <div class="card-grid">
                     {% for r in results %}
                     <div class="result">
@@ -42,52 +97,131 @@
                             <img src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">
                         </a>
                         <div class="result-name">{{ r.name }} <span class="percent">{{ r.percent }}%</span></div>
+                        {% if r.price %}<div class="result-price">{{ r.price }}</div>{% endif %}
                         <div class="match-line" title="matches your card's line: {{ r.our_line }}">"{{ r.their_line }}"</div>
+                        {% if r.more_count %}
+                        <div class="more-lines" title="{{ r.more_text }}">+{{ r.more_count }} more matching {% if r.more_count == 1 %}line{% else %}lines{% endif %}</div>
+                        {% endif %}
                     </div>
                     {% endfor %}
                 </div>
 
-                {% if has_more %}
+                {% if has_more or weak_count %}
                 <div class="load-more-wrap">
-                    <button id="load-more" data-card="{{ card.name }}">Load 20 more</button>
+                    <button id="load-more" data-min="{{ min_pct }}" {% if not has_more %}data-tier="weak"{% endif %}>
+                        {%- if has_more %}Load 20 more{% else %}Show {{ weak_count }} weaker matches (below {{ min_pct }}%){% endif -%}
+                    </button>
                 </div>
                 {% endif %}
 
                 <script>
                 /*
                     the load more button. asks the server for the next 20 results as
-                    json and glues them onto the bottom of the grid. offset is just
-                    how many cards we are already showing. the card name lives in a
-                    data attribute on the button so this script stays plain js
+                    json and glues them onto the bottom of the grid. the page's whole
+                    query string (search, filters, picked lines, sort) rides along so
+                    page two obeys the same rules as page one.
+
+                    the same button handles both tiers: it pages through the strong
+                    matches first, then relabels itself to "show weaker matches" and
+                    keeps paging through the cards under the minimum match line, with
+                    a divider in the grid so the boundary is obvious. that way nobody
+                    ever hits a dead end or has to scroll back up to loosen things
                 */
                 var offset = 20;
                 var btn = document.getElementById("load-more");
                 if (btn) {
-                    var cardName = btn.dataset.card;
+                    //if the page opened with no strong matches left, the button is
+                    //already pointed at the weak tier and starts from the top of it
+                    if (btn.dataset.tier == "weak") {
+                        offset = 0;
+                    }
                     btn.onclick = function() {
+                        var weakTier = btn.dataset.tier == "weak";
                         btn.textContent = "Loading...";
-                        fetch("/more?q=" + encodeURIComponent(cardName) + "&offset=" + offset)
+                        var params = new URLSearchParams(window.location.search);
+                        params.set("offset", offset);
+                        if (weakTier) {
+                            params.set("weak", "1");
+                        }
+                        fetch("/more?" + params.toString())
                             .then(function(r) { return r.json(); })
                             .then(function(data) {
                                 var grid = document.querySelector(".card-grid");
+                                //the first weak batch gets a divider so the quality drop is labeled
+                                if (weakTier && offset == 0 && data.results.length) {
+                                    var divider = document.createElement("div");
+                                    divider.className = "weak-divider";
+                                    divider.textContent = "matches below " + btn.dataset.min + "% from here";
+                                    grid.appendChild(divider);
+                                }
                                 data.results.forEach(function(r) {
                                     var div = document.createElement("div");
                                     div.className = "result";
-                                    div.innerHTML = '<a href="' + r.scryfall_uri + '" target="_blank">' +
+                                    var html = '<a href="' + r.scryfall_uri + '" target="_blank">' +
                                         '<img src="' + r.image + '" alt="" loading="lazy"></a>' +
-                                        '<div class="result-name">' + r.name + ' <span class="percent">' + r.percent + '%</span></div>' +
-                                        '<div class="match-line">"' + r.their_line + '"</div>';
+                                        '<div class="result-name">' + r.name + ' <span class="percent">' + r.percent + '%</span></div>';
+                                    if (r.price) {
+                                        html += '<div class="result-price">' + r.price + '</div>';
+                                    }
+                                    html += '<div class="match-line">"' + r.their_line + '"</div>';
+                                    if (r.more_count) {
+                                        html += '<div class="more-lines">+' + r.more_count + ' more matching ' + (r.more_count == 1 ? "line" : "lines") + '</div>';
+                                    }
+                                    div.innerHTML = html;
+                                    /*
+                                        the tooltips get set as properties instead of going in the
+                                        html string, the line text is full of quote characters that
+                                        would break out of an attribute
+                                    */
+                                    div.querySelector(".match-line").title = "matches your card's line: " + r.our_line;
+                                    if (r.more_count) {
+                                        div.querySelector(".more-lines").title = r.more_text;
+                                    }
                                     grid.appendChild(div);
                                 });
                                 offset = offset + data.results.length;
                                 btn.textContent = "Load 20 more";
-                                //once the server runs out theres no point keeping the button around
                                 if (!data.has_more) {
-                                    btn.remove();
+                                    if (!weakTier && data.weak_count > 0) {
+                                        //strong matches are done, repoint the button at the weak tier
+                                        btn.dataset.tier = "weak";
+                                        offset = 0;
+                                        btn.textContent = "Show " + data.weak_count + " weaker matches (below " + btn.dataset.min + "%)";
+                                    } else {
+                                        //truly nothing left, no point keeping the button around
+                                        btn.remove();
+                                    }
                                 }
                             });
                     };
                 }
+
+                /*
+                    the line picker. clicking a rules line toggles its index in the
+                    lines url param and reloads, so the search only uses the picked
+                    lines and the url stays shareable
+                */
+                document.querySelectorAll(".oracle-line").forEach(function(el) {
+                    el.onclick = function() {
+                        var params = new URLSearchParams(window.location.search);
+                        var picked = [];
+                        if (params.get("lines")) {
+                            picked = params.get("lines").split(",");
+                        }
+                        var i = picked.indexOf(el.dataset.idx);
+                        if (i == -1) {
+                            picked.push(el.dataset.idx);
+                        } else {
+                            picked.splice(i, 1);
+                        }
+                        if (picked.length) {
+                            params.set("lines", picked.join(","));
+                        } else {
+                            params.delete("lines");
+                        }
+                        window.location.search = params.toString();
+                    };
+                });
                 </script>
             {% else %}
                 <div class="hero">

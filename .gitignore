@@ -9,6 +9,9 @@ __pycache__/
 #editor stuff
 .vscode/
 
+#local database connection string, never commit this
+.env
+
 #in case a virtualenv ever lives in here
 venv/
 .venv/

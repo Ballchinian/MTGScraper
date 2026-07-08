@@ -17,8 +17,26 @@ CREATE TABLE IF NOT EXISTS cards (
     image        text,
     scryfall_uri text,
     text_hash    text NOT NULL,
-    updated_at   timestamptz DEFAULT now()
+    updated_at   timestamptz DEFAULT now(),
+    --the filter columns. the ingest refreshes these on every run even when
+    --the rules text didnt change, since prices move every day
+    color_identity  text NOT NULL DEFAULT '',
+    price_usd       numeric,
+    price_eur       numeric,  --stored for a future currency toggle, the site only shows usd
+    cmc             numeric NOT NULL DEFAULT 0,  --mana value. numeric because scryfall says so, in practice whole numbers
+    game_changer    boolean NOT NULL DEFAULT false,
+    legal_commander boolean NOT NULL DEFAULT true
 );
+
+--databases created before the filter columns existed pick them up here.
+--fresh ones already have them from the CREATE TABLE above, and IF NOT
+--EXISTS makes rerunning free either way
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS color_identity text NOT NULL DEFAULT '';
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS price_usd numeric;
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS price_eur numeric;
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS cmc numeric NOT NULL DEFAULT 0;
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS game_changer boolean NOT NULL DEFAULT false;
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS legal_commander boolean NOT NULL DEFAULT true;
 
 --trigram index so the name searches (prefix, substring, fuzzy) stay quick
 CREATE INDEX IF NOT EXISTS cards_name_trgm ON cards USING gin (name gin_trgm_ops);

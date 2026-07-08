@@ -120,8 +120,17 @@ def main():
     new_cards = []
     changed_cards = []
     unchanged = 0
+    card_rows = []  #every kept card, for the upsert below
     for c in cards:
         h = card_hash(c)
+        #prices come from scryfall as strings like "0.25" or None, postgres
+        #is happy with either going into a numeric column
+        prices = c.get("prices", {})
+        card_rows.append((c["oracle_id"], c["name"], c.get("mana_cost", ""), c.get("type_line", ""),
+                          get_text(c), get_image(c), c.get("scryfall_uri", ""), h,
+                          "".join(c.get("color_identity", [])), prices.get("usd"), prices.get("eur"),
+                          c.get("cmc", 0), c.get("game_changer", False),
+                          c.get("legalities", {}).get("commander") == "legal"))
         old = have.get(c["oracle_id"])
         if old is None:
             new_cards.append((c, h))
@@ -129,7 +138,46 @@ def main():
             changed_cards.append((c, h))
         else:
             unchanged += 1
-    print(str(len(new_cards)) + " new, " + str(len(changed_cards)) + " changed, " + str(unchanged) + " unchanged")
+
+    #cards in the database that arent in the kept list anymore, either scryfall
+    #dropped them or the filters got stricter. they need to go or they sit in
+    #search results forever
+    kept_ids = set()
+    for c in cards:
+        kept_ids.add(c["oracle_id"])
+    stale = []
+    for oid in have:
+        if oid not in kept_ids:
+            stale.append(oid)
+    print(str(len(new_cards)) + " new, " + str(len(changed_cards)) + " changed, "
+          + str(unchanged) + " unchanged, " + str(len(stale)) + " to remove")
+
+    #every card row gets written every run, not just the new and changed ones.
+    #prices move daily and wizards edits the game changer list now and then,
+    #so waiting for a rules text change would leave those stale forever. the
+    #slow embedding work below still only happens when text actually changed
+    print("writing " + str(len(card_rows)) + " card rows (keeps prices and filters fresh)...")
+    with conn.cursor() as cur:
+        cur.executemany("""
+            INSERT INTO cards (oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, text_hash,
+                               color_identity, price_usd, price_eur, cmc, game_changer, legal_commander, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (oracle_id) DO UPDATE SET
+                name = EXCLUDED.name,
+                mana_cost = EXCLUDED.mana_cost,
+                type_line = EXCLUDED.type_line,
+                oracle_text = EXCLUDED.oracle_text,
+                image = EXCLUDED.image,
+                scryfall_uri = EXCLUDED.scryfall_uri,
+                text_hash = EXCLUDED.text_hash,
+                color_identity = EXCLUDED.color_identity,
+                price_usd = EXCLUDED.price_usd,
+                price_eur = EXCLUDED.price_eur,
+                cmc = EXCLUDED.cmc,
+                game_changer = EXCLUDED.game_changer,
+                legal_commander = EXCLUDED.legal_commander,
+                updated_at = now()
+        """, card_rows)
 
     work = new_cards + changed_cards
     if work:
@@ -150,30 +198,11 @@ def main():
         print("embedding " + str(len(texts)) + " lines, this is the slow part...")
         embs = model.encode(texts, batch_size=128, show_progress_bar=True, normalize_embeddings=True)
 
-        #all the writes ride in one transaction, so a crash halfway through
-        #leaves the database exactly how it was. executemany batches the rows
-        #into pipelined round trips, one insert at a time would take half an
-        #hour from github's servers on the initial seed
+        #all the writes ride in one transaction (one commit at the very end),
+        #so a crash halfway through leaves the database exactly how it was.
+        #executemany batches the rows into pipelined round trips, one insert
+        #at a time would take half an hour from github's servers on the seed
         with conn.cursor() as cur:
-            print("writing " + str(len(work)) + " cards to the database...")
-            card_rows = []
-            for c, h in work:
-                card_rows.append((c["oracle_id"], c["name"], c.get("mana_cost", ""), c.get("type_line", ""),
-                                  get_text(c), get_image(c), c.get("scryfall_uri", ""), h))
-            cur.executemany("""
-                INSERT INTO cards (oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, text_hash, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
-                ON CONFLICT (oracle_id) DO UPDATE SET
-                    name = EXCLUDED.name,
-                    mana_cost = EXCLUDED.mana_cost,
-                    type_line = EXCLUDED.type_line,
-                    oracle_text = EXCLUDED.oracle_text,
-                    image = EXCLUDED.image,
-                    scryfall_uri = EXCLUDED.scryfall_uri,
-                    text_hash = EXCLUDED.text_hash,
-                    updated_at = now()
-            """, card_rows)
-
             #changed cards get their old lines thrown out and rebuilt fresh
             if changed_cards:
                 old_ids = []
@@ -188,11 +217,21 @@ def main():
             print("writing " + str(len(rows)) + " lines...")
             cur.executemany("INSERT INTO lines (oracle_id, line_text, embedding) VALUES (%s, %s, %s)", rows)
 
-            #recount how common every line is. its one group by over ~61k rows,
-            #way easier than trying to patch the counts incrementally
-            print("recounting how common every line is...")
-            cur.execute("TRUNCATE line_stats")
-            cur.execute("INSERT INTO line_stats SELECT line_text, count(*) FROM lines GROUP BY line_text")
+    #deleting a card cascades to its lines, so this cleans up everything
+    if stale:
+        print("removing " + str(len(stale)) + " cards that are gone or filtered out now...")
+        gone = []
+        for oid in stale:
+            gone.append((oid,))
+        with conn.cursor() as cur:
+            cur.executemany("DELETE FROM cards WHERE oracle_id = %s", gone)
+
+    if work or stale:
+        #recount how common every line is. its one group by over ~61k rows,
+        #way easier than trying to patch the counts incrementally
+        print("recounting how common every line is...")
+        conn.execute("TRUNCATE line_stats")
+        conn.execute("INSERT INTO line_stats SELECT line_text, count(*) FROM lines GROUP BY line_text")
 
     #remember which bulk file this was so tomorrow's run can skip it
     conn.execute("""
@@ -201,7 +240,7 @@ def main():
     """, (updated_at,))
     conn.commit()
     conn.close()
-    print("done! " + str(len(new_cards)) + " added, " + str(len(changed_cards)) + " updated")
+    print("done! " + str(len(new_cards)) + " added, " + str(len(changed_cards)) + " updated, " + str(len(stale)) + " removed")
 
 
 if __name__ == "__main__":

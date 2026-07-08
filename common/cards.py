@@ -54,6 +54,8 @@ def keep_card(card):
         return False  #skip the joke sets
     if card.get("layout") in SKIP_LAYOUTS:
         return False
+    if card.get("digital"):
+        return False  #arena/mtgo only cards (alchemy rebalances etc), never printed in paper
     if not get_text(card).strip():
         return False  #vanilla creatures, basic lands etc, nothing to compare
     return True
