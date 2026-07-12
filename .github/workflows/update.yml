@@ -22,11 +22,11 @@ jobs:
           cache: pip
           cache-dependency-path: ingest/requirements.txt
 
-      #the embedding model is ~90mb, no point pulling it from huggingface every day
+      #the embedding model is ~1.2gb, no point pulling it from huggingface every day
       - uses: actions/cache@v5
         with:
           path: ~/.cache/huggingface
-          key: all-MiniLM-L6-v2
+          key: mtg-tuned-embeddinggemma-300m
 
       #plain "pip install torch" grabs a 2gb+ cuda build we cant even use here,
       #installing the cpu wheel first means the requirements step sees torch
@@ -37,4 +37,5 @@ jobs:
       - run: python -m ingest.update
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}  #the tuned embedding model lives in a private hugging face repo
           PYTHONUNBUFFERED: "1"  #otherwise the log messages pile up and appear all at once at the end

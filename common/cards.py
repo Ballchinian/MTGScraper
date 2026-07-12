@@ -5,7 +5,7 @@
 import re
 
 #scryfall's docs say to send a real user agent with api requests
-HEADERS = {"User-Agent": "Cardalike/1.0 (personal project)", "Accept": "application/json"}
+HEADERS = {"User-Agent": "Delvefall/1.0 (personal project)", "Accept": "application/json"}
 
 #layouts that arent actual playable cards
 SKIP_LAYOUTS = ["token", "double_faced_token", "emblem", "art_series", "planar", "scheme", "vanguard"]

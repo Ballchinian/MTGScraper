@@ -15,3 +15,14 @@ __pycache__/
 #in case a virtualenv ever lives in here
 venv/
 .venv/
+
+#finetune outputs, all reproducible: the scripts remake the jsonls and csv,
+#the model itself lives on hugging face. train_rewordings.jsonl is NOT in
+#this list on purpose, its hand written and cant be regenerated
+finetune/mtg-tuned-*/
+finetune/train_pairs.jsonl
+finetune/train_negatives.jsonl
+finetune/train_triplets.jsonl
+finetune/train_keywords.jsonl
+finetune/bakeoff_results.csv
+finetune/sanity_report.txt

@@ -24,6 +24,15 @@ from common.cards import HEADERS, keep_card, split_lines, get_text, get_image
 BULK_URL = "https://api.scryfall.com/bulk-data"
 DOWNLOAD_FILE = "oracle-cards.json"
 
+#my fine tuned embeddinggemma (a sentence-transformers model). it sits in a
+#private repo on hugging face, so HF_TOKEN has to be set or the download 401s.
+#the prompt was glued to the front of every line during training, encoding
+#without it gives useless vectors. swapping EMBED_MODEL for something else
+#makes the next run rebuild every vector on its own
+EMBED_MODEL = "BallchinianMan/mtg-tuned-embeddinggemma-300m"
+EMBED_PROMPT = "task: sentence similarity | query: "
+EMBED_DIMS = 768
+
 
 def get_with_retries(url, tries=3):
     #scryfall hiccups sometimes, no reason to fail the whole run over it
@@ -83,6 +92,14 @@ def main():
     conn.commit()
     register_vector(conn)
 
+    #vectors from two different models cant be compared with each other, so
+    #if the database was embedded by anything other than the model above,
+    #every line needs redoing this run
+    row = conn.execute("SELECT value FROM meta WHERE key = 'embed_model'").fetchone()
+    model_changed = row is None or row[0] != EMBED_MODEL
+    if model_changed:
+        print("embedding model changed, this run rebuilds every vector (the slow full reseed)")
+
     print("asking scryfall where the bulk file lives...")
     bulk = None
     for item in get_with_retries(BULK_URL).json()["data"]:
@@ -92,9 +109,10 @@ def main():
     updated_at = bulk["updated_at"]
 
     #the gate: if we already processed this exact bulk file, stop right here.
-    #this is what makes rerunning the workflow basically free
+    #this is what makes rerunning the workflow basically free. unless the
+    #model changed, then theres a full rebuild to do either way
     row = conn.execute("SELECT value FROM meta WHERE key = 'scryfall_updated_at'").fetchone()
-    if row and row[0] == updated_at:
+    if not model_changed and row and row[0] == updated_at:
         print("already processed the bulk file from " + updated_at + ", nothing to do")
         conn.close()
         return
@@ -116,6 +134,12 @@ def main():
     have = {}
     for oracle_id, text_hash in conn.execute("SELECT oracle_id, text_hash FROM cards"):
         have[str(oracle_id)] = text_hash
+
+    if model_changed:
+        #forget the stored hashes so every card counts as new and gets
+        #re-embedded. the old vectors stay put for now, the site keeps
+        #searching on them while the new ones compute
+        have = {}
 
     new_cards = []
     changed_cards = []
@@ -192,19 +216,27 @@ def main():
 
         #imported down here so the nothing-changed runs never pay the slow
         #torch import, it takes longer than the entire rest of the script
-        print("loading the model (downloads ~90mb the very first time)...")
+        print("loading the model (downloads ~1.2gb the very first time)...")
         from sentence_transformers import SentenceTransformer
-        model = SentenceTransformer("all-MiniLM-L6-v2")
+        model = SentenceTransformer(EMBED_MODEL)
         print("embedding " + str(len(texts)) + " lines, this is the slow part...")
-        embs = model.encode(texts, batch_size=128, show_progress_bar=True, normalize_embeddings=True)
+        embs = model.encode(texts, batch_size=64, show_progress_bar=True,
+                            normalize_embeddings=True, prompt=EMBED_PROMPT)
 
         #all the writes ride in one transaction (one commit at the very end),
         #so a crash halfway through leaves the database exactly how it was.
         #executemany batches the rows into pipelined round trips, one insert
         #at a time would take half an hour from github's servers on the seed
         with conn.cursor() as cur:
+            if model_changed:
+                #the truncate lives down here on purpose: doing it before the
+                #slow encode above would hold the table lock the whole time
+                #and hang every search on the site. the alter resizes the
+                #column, the old model was 384 dims
+                cur.execute("TRUNCATE lines")
+                cur.execute("ALTER TABLE lines ALTER COLUMN embedding TYPE vector(" + str(EMBED_DIMS) + ")")
             #changed cards get their old lines thrown out and rebuilt fresh
-            if changed_cards:
+            elif changed_cards:
                 old_ids = []
                 for c, h in changed_cards:
                     old_ids.append((c["oracle_id"],))
@@ -233,11 +265,16 @@ def main():
         conn.execute("TRUNCATE line_stats")
         conn.execute("INSERT INTO line_stats SELECT line_text, count(*) FROM lines GROUP BY line_text")
 
-    #remember which bulk file this was so tomorrow's run can skip it
+    #remember which bulk file this was so tomorrow's run can skip it, and
+    #which model made the vectors so the next swap rebuilds automatically
     conn.execute("""
         INSERT INTO meta (key, value) VALUES ('scryfall_updated_at', %s)
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
     """, (updated_at,))
+    conn.execute("""
+        INSERT INTO meta (key, value) VALUES ('embed_model', %s)
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    """, (EMBED_MODEL,))
     conn.commit()
     conn.close()
     print("done! " + str(len(new_cards)) + " added, " + str(len(changed_cards)) + " updated, " + str(len(stale)) + " removed")

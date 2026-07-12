@@ -2,17 +2,17 @@
 <html>
     <head>
         <meta charset="utf-8">
-        <title>Slopfall</title>
+        <title>Delvefall</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="icon" type="image/png" href="{{ url_for('static', filename='SlopfallLogo.png') }}">
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='DelvefallLogo.png') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     </head>
     <body>
 
         <header>
             <div class="header-inner">
-                <img class="logo" src="{{ url_for('static', filename='SlopfallLogo.png') }}" alt="Slopfall logo" width="50px" height="50px">
-                <a class="site-name" href="/">Slopfall</a>
+                <img class="logo" src="{{ url_for('static', filename='DelvefallLogo.png') }}" alt="Delvefall logo" width="50px" height="50px">
+                <a class="site-name" href="/">Delvefall</a>
                 <form action="/" method="get" class="search-form" autocomplete="off">
                     <input type="text" name="q" placeholder="Search for a card by name..." value="{{ query or '' }}" autofocus>
                     <button type="submit">Search</button>

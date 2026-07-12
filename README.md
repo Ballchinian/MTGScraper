@@ -1,4 +1,4 @@
-# Cardalike
+# Delvefall
 
 A web app that finds Magic: The Gathering cards that do similar things to the card you search for. Not cards that share words, and not "cards that go in the same deck", but cards whose abilities mean the same thing even when the wording is completely different, all by comparing sentence embeddings of every line of rules text ever printed.
 
@@ -18,7 +18,7 @@ A web app that finds Magic: The Gathering cards that do similar things to the ca
 
 ## How it works
 
-Everything lives in a Postgres database with the pgvector extension. The embeddings sit in a `vector(384)` column and the database does the nearest neighbor math itself, so the website is a tiny Flask app that runs a few queries per search. The language model only ever runs inside the update pipeline, never on the server.
+Everything lives in a Postgres database with the pgvector extension. The embeddings sit in a `vector(768)` column and the database does the nearest neighbor math itself, so the website is a tiny Flask app that runs a few queries per search. The language model only ever runs inside the update pipeline, never on the server.
 
 Three pieces:
 
@@ -70,7 +70,7 @@ Each line of a card's rules text is treated as one ability, so lines get embedde
 
 ### Embeddings
 
-Every cleaned line goes through the `all-MiniLM-L6-v2` sentence transformer, which turns text into a normalized vector of 384 numbers where lines that mean similar things land close together. That is what lets "you may draw a card unless that player pays {4}" match "they may pay {1}. If the player does, they draw a card".
+Every cleaned line goes through a fine-tuned EmbeddingGemma model trained specifically on Magic rules text (the whole story of building it lives in `finetune/README.md`), which turns text into a normalized vector of 768 numbers where lines that mean similar things land close together — and, unlike any off-the-shelf model, knows that "draw a card, then discard a card" and "discard a card: draw a card" are different things. That is what lets "you may draw a card unless that player pays {4}" match "they may pay {1}. If the player does, they draw a card".
 
 ### Ranking
 
@@ -87,47 +87,12 @@ Results split into two tiers around a minimum match percent (80 by default, adju
 
 Name search runs on the pg_trgm extension: exact match, then prefix, then substring, then trigram similarity so "lightnig bolt" still finds Lightning Bolt. The autocomplete dropdown works the same way.
 
-## Running locally
-
-You need a Postgres with pgvector. Easiest way is docker:
-
-```
-docker run -d --name cardalike-db -e POSTGRES_PASSWORD=cards -p 5432:5432 pgvector/pgvector:pg16
-```
-
-Then seed it (first run embeds everything, give it a few minutes):
-
-```
-set DATABASE_URL=postgresql://postgres:cards@localhost:5432/postgres
-pip install -r ingest/requirements.txt
-python -m ingest.update
-```
-
-The schema applies itself on the first run, there is no separate setup step. Then start the site:
-
-```
-cd web
-pip install -r requirements.txt
-python app.py
-```
-
-## Deploying
-
-The site runs on Railway and the updates run on GitHub Actions. One time setup:
-
-1. On Railway, create a Postgres database (their pgvector template, or any Postgres image with pgvector). Copy the public connection string.
-2. On GitHub, add that string as a repo secret named `DATABASE_URL` (Settings > Secrets and variables > Actions).
-3. On the Actions tab, run the "update card data" workflow by hand once. That is the initial seed, takes a few minutes.
-4. On Railway, create a service from this repo, set its root directory to `web/`, and give it the same `DATABASE_URL` as an environment variable. The Procfile handles the start command.
-
-After that the workflow wakes up daily at 9am UTC and keeps the card data fresh on its own.
-
 ## Tech stack
 
 - **Backend:** Python / Flask
 - **Database:** Postgres + pgvector on Railway
 - **Frontend:** Jinja templates + vanilla JavaScript
-- **Similarity:** sentence-transformers (`all-MiniLM-L6-v2`), embedded at ingest time only
+- **Similarity:** sentence-transformers (a fine-tuned EmbeddingGemma, see `finetune/README.md`), embedded at ingest time only
 - **Card data:** Scryfall bulk data (Oracle Cards), refreshed daily by GitHub Actions
 
 ## A typical search

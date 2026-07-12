@@ -41,13 +41,15 @@ ALTER TABLE cards ADD COLUMN IF NOT EXISTS legal_commander boolean NOT NULL DEFA
 --trigram index so the name searches (prefix, substring, fuzzy) stay quick
 CREATE INDEX IF NOT EXISTS cards_name_trgm ON cards USING gin (name gin_trgm_ops);
 
---one row per line of rules text, with its embedding (384 numbers from
---all-MiniLM-L6-v2, normalized, so cosine distance works)
+--one row per line of rules text, with its embedding (768 numbers from my
+--fine tuned embeddinggemma, normalized, so cosine distance works). databases
+--still on the old 384 column get moved over by update.py when it notices
+--the model changed
 CREATE TABLE IF NOT EXISTS lines (
     id        bigserial PRIMARY KEY,
     oracle_id uuid NOT NULL REFERENCES cards(oracle_id) ON DELETE CASCADE,
     line_text text NOT NULL,
-    embedding vector(384) NOT NULL
+    embedding vector(768) NOT NULL
 );
 
 --lets us grab one card's lines instantly at search time
