@@ -373,7 +373,10 @@ body.home main {
     max-width: 560px;
     margin: 0 auto;
     position: relative;
-    z-index: 2; /* floats above the recent-search chips */
+    /* above the recent-search chips AND the home buttons: at the buttons'
+       old equal z-index they painted over the suggestions dropdown (later
+       in the DOM wins a tie) and ate clicks on the second option */
+    z-index: 3;
 }
 
 .home-search input {
@@ -547,13 +550,15 @@ body.home footer a { color: #a8b9ca; }
     gap: 6px;
     opacity: 0;
     transition: opacity 0.15s;
-    pointer-events: none; /* an invisible overlay must not steal clicks from the card link */
+    /* never clickable itself: invisible it must not steal clicks from the
+       card link, and visible the strip spans the frame's whole width and
+       would sit on top of the report ? in the corner */
+    pointer-events: none;
 }
 
-.card-frame:hover .card-overlay {
-    opacity: 1;
-    pointer-events: auto;
-}
+.card-frame:hover .card-overlay { opacity: 1; }
+
+.card-frame:hover .card-overlay button { pointer-events: auto; }
 
 .card-overlay button {
     background: rgba(13, 27, 42, 0.65);
@@ -603,20 +608,43 @@ body.home footer a { color: #a8b9ca; }
 
 .report-open:hover { text-decoration: underline; }
 
-/* the flag under each result. quiet gray until hovered so the grid doesn't
-   read as a wall of complaints */
+/* the flag on each result: a small ? riding the bottom-right corner of the
+   art, invisible until the card is hovered (like the rotate/transform
+   overlay) so the grid doesn't read as a wall of complaints. pointer-events
+   flips with the opacity so the invisible button never steals clicks from
+   the card link */
 .report-flag {
-    display: block;
-    background: none;
+    position: absolute;
+    bottom: 4%;
+    right: 4%;
+    width: 26px;
+    height: 26px;
     border: 0;
-    padding: 0;
-    margin-top: 3px;
-    color: #b0aab8;
-    font-size: 11.5px;
+    border-radius: 50%;
+    background: rgba(13, 27, 42, 0.65);
+    color: white;
+    font-size: 14px;
+    line-height: 1;
     cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
 }
 
-.report-flag:hover { color: #c23c2e; text-decoration: underline; }
+.card-frame:hover .report-flag {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.report-flag:hover { background: #c23c2e; }
+
+/* no hover on touch screens, so the flag stays faintly visible there */
+@media (hover: none) {
+    .report-flag {
+        opacity: 0.7;
+        pointer-events: auto;
+    }
+}
 
 /* the card a misplaced report is about */
 .result.flagged {
@@ -649,6 +677,11 @@ body.home footer a { color: #a8b9ca; }
     flex: 1;
     min-width: 220px;
 }
+
+/* display: flex above would override the hidden attribute's display: none
+   (author rules beat the browser's [hidden] rule), so misplaced reports
+   would still show the card-name box. this puts hidden back in charge */
+.report-pick[hidden] { display: none; }
 
 .report-pick input {
     flex: 1;

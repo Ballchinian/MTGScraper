@@ -79,10 +79,13 @@
         <div class="card-grid">
             {% for r in results %}
             <div class="result">
+                {# the ? in the picture's corner is the misplaced-card report,
+                   it fades in with the rest of the hover overlay #}
                 <div class="card-frame{% if r.sideways %} sideways{% endif %}" data-sideways="{{ '1' if r.sideways else '' }}" data-flip="{{ '1' if r.flip else '' }}" data-back="{{ r.image_back }}">
                     <a href="{{ r.scryfall_uri }}" target="_blank">
                         <img src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">
                     </a>
+                    <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="shouldn't be here? report this as a bad match">?</button>
                 </div>
                 <div class="result-name">{{ r.name }} <span class="percent">{{ r.percent }}%</span></div>
                 {% if r.price %}<div class="result-price">{{ r.price }}</div>{% endif %}
@@ -90,7 +93,6 @@
                 {% if r.more_count %}
                 <div class="more-lines" title="{{ r.more_text }}">+{{ r.more_count }} more matching {% if r.more_count == 1 %}line{% else %}lines{% endif %}</div>
                 {% endif %}
-                <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="report this as a bad match">shouldn't be here?</button>
             </div>
             {% endfor %}
         </div>
@@ -177,15 +179,17 @@
                         /*
                             the report flag is built as an element for the same
                             reason as the tooltips: card names can hold quote
-                            characters that would break out of an attribute
+                            characters that would break out of an attribute.
+                            it lives inside the frame so it can ride the
+                            picture's corner like the server-rendered ones
                         */
                         var flag = document.createElement("button");
                         flag.className = "report-flag";
-                        flag.textContent = "shouldn't be here?";
-                        flag.title = "report this as a bad match";
+                        flag.textContent = "?";
+                        flag.title = "shouldn't be here? report this as a bad match";
                         flag.dataset.id = r.oracle_id;
                         flag.dataset.name = r.name;
-                        div.appendChild(flag);
+                        div.querySelector(".card-frame").appendChild(flag);
                         grid.appendChild(div);
                     });
                     //the fresh frames need their rotate/flip/transform buttons
