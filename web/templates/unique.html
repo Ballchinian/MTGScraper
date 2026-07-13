@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Unique cards - Delvefall{% endblock %}
+
+{% block content %}
+    <div class="unique-intro">
+        <h1>Unique cards</h1>
+        <p>The opposite of a random card: this deals you a card that does something no other
+        card really does. A card's uniqueness is 100 minus the best match its most
+        one-of-a-kind rules line has anywhere else in the game. Tune the bar, set your
+        filters, hunt for a card your next deck gets built around.</p>
+    </div>
+
+    {# no submit button here on purpose: the deal happens on load and through
+       the repeat button, and pressing enter in a field deals too because the
+       form's submit handler is the dealer #}
+    <form id="unique-form" class="filter-bar">
+        {% include "_filters.html" %}
+        <label title="100 minus the best match the card's most one-of-a-kind line has anywhere else. nothing in the game reaches 51, let alone 100">
+            uniqueness &ge; <input type="number" name="u" min="0" max="100" step="5" value="{{ unique_default }}">
+        </label>
+    </form>
+
+    {# the controls sit ABOVE the card so spamming through cards never makes
+       you chase the button down the page, and the arrows walk the paper
+       trail of everything this browser has been dealt #}
+    <div class="unique-controls">
+        <button id="unique-back" title="the previous card you were dealt">&#9664;</button>
+        <button id="unique-again">Repeat this search</button>
+        <button id="unique-fwd" title="the next card in your trail">&#9654;</button>
+    </div>
+
+    <p class="unique-status" id="unique-status"></p>
+
+    <div id="unique-card" class="unique-single"></div>
+
+    {# start over sits way down here alone so a misclick around the controls
+       can never wipe the seen list. the confirm is the second net #}
+    <div class="unique-reset-wrap">
+        <button id="unique-reset">Start over</button>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/*
+    the dealer. the page deals one card on load, and every "repeat this
+    search" (or enter in a filter field) asks the server for one random card
+    above the uniqueness bar that this browser hasn't seen yet. the seen
+    list lives in localStorage and doubles as the history the arrows walk:
+    fresh deals go on the end, the back arrow steps into everything you've
+    ever been dealt here, even from earlier visits.
+
+    the list is deliberately shared across filter combos: seeing a card while
+    browsing red creatures should stop it reappearing when the filters open up
+*/
+var form = document.getElementById("unique-form");
+var cardBox = document.getElementById("unique-card");
+var statusEl = document.getElementById("unique-status");
+var againBtn = document.getElementById("unique-again");
+var backBtn = document.getElementById("unique-back");
+var fwdBtn = document.getElementById("unique-fwd");
+
+var seen = [];
+try {
+    seen = JSON.parse(localStorage.getItem("unique_seen") || "[]");
+} catch (e) {}
+var pos = seen.length - 1;  //which card in the trail is on screen
+var cache = {};             //oracle_id -> card json, so the arrows dont refetch
+
+function render(c) {
+    //one card. the rotate/flip/transform buttons come from the shared
+    //card-frame overlay (static/cards.js), this just marks the frame up the
+    //same way the search page does
+    var div = document.createElement("div");
+    div.className = "result";
+
+    var frame = document.createElement("div");
+    frame.className = "card-frame" + (c.sideways ? " sideways" : "");
+    frame.dataset.sideways = c.sideways ? "1" : "";
+    frame.dataset.flip = c.flip ? "1" : "";
+    frame.dataset.back = c.image_back || "";
+    var link = document.createElement("a");
+    link.href = c.scryfall_uri;
+    link.target = "_blank";
+    var img = document.createElement("img");
+    img.src = c.image;
+    img.alt = c.name;
+    link.appendChild(img);
+    frame.appendChild(link);
+    div.appendChild(frame);
+
+    var name = document.createElement("div");
+    name.className = "result-name";
+    name.textContent = c.name + " ";
+    var pct = document.createElement("span");
+    pct.className = "percent";
+    pct.title = "uniqueness";
+    pct.textContent = c.percent + "% unique";
+    name.appendChild(pct);
+    div.appendChild(name);
+
+    if (c.price) {
+        var price = document.createElement("div");
+        price.className = "result-price";
+        price.textContent = c.price;
+        div.appendChild(price);
+    }
+
+    var line = document.createElement("div");
+    line.className = "match-line";
+    line.textContent = '"' + c.unique_line + '"';
+    line.title = "its most one-of-a-kind line, nothing else in the game comes within " + (100 - c.percent) + "% of it";
+    div.appendChild(line);
+
+    var closest = document.createElement("div");
+    closest.className = "more-lines";
+    closest.innerHTML = '<a href="/search?q=' + encodeURIComponent(c.name) + '">what comes closest?</a>';
+    div.appendChild(closest);
+
+    return div;
+}
+
+function updateArrows() {
+    backBtn.disabled = pos <= 0;
+    fwdBtn.disabled = pos >= seen.length - 1;
+}
+
+function paint(c) {
+    cardBox.innerHTML = "";
+    cardBox.appendChild(render(c));
+    enhanceCardFrames(cardBox);
+}
+
+function showAt(i) {
+    pos = i;
+    updateArrows();
+    var id = seen[i];
+    var trail = "Card " + (i + 1) + " of " + seen.length + " on your trail.";
+    if (cache[id]) {
+        paint(cache[id]);
+        statusEl.textContent = trail;
+        return;
+    }
+    fetch("/unique/card?id=" + id)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.card) {
+                cache[id] = data.card;
+                paint(data.card);
+                statusEl.textContent = trail;
+            } else {
+                cardBox.innerHTML = "";
+                statusEl.textContent = "That card left the database since you saw it. " + trail;
+            }
+        });
+}
+
+backBtn.onclick = function() { if (pos > 0) { showAt(pos - 1); } };
+fwdBtn.onclick = function() { if (pos < seen.length - 1) { showAt(pos + 1); } };
+
+var dealing = false;
+function dealOne() {
+    if (dealing) {
+        return;
+    }
+    dealing = true;
+    againBtn.textContent = "Dealing...";
+    //the filters and the uniqueness bar travel as a query string, exactly
+    //like the search page's filter form would send them
+    var params = new URLSearchParams(new FormData(form));
+    fetch("/unique/cards?" + params.toString(), {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({seen: seen})
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            dealing = false;
+            againBtn.textContent = "Repeat this search";
+            if (data.cards.length) {
+                var c = data.cards[0];
+                cache[c.oracle_id] = c;
+                seen.push(c.oracle_id);
+                localStorage.setItem("unique_seen", JSON.stringify(seen));
+                pos = seen.length - 1;
+                updateArrows();
+                paint(c);
+                if (data.remaining == 0) {
+                    statusEl.textContent = "That was the last card you haven't seen that fits this search.";
+                } else {
+                    statusEl.textContent = data.remaining + " more unseen cards fit this search.";
+                }
+            } else {
+                cardBox.innerHTML = "";
+                updateArrows();
+                statusEl.textContent = "No cards you haven't seen fit this search. Lower the bar, loosen the filters, or start over to make the " + seen.length + " cards you've been dealt eligible again.";
+            }
+        });
+}
+
+form.onsubmit = function(e) {
+    e.preventDefault();
+    dealOne();
+};
+againBtn.onclick = dealOne;
+
+document.getElementById("unique-reset").onclick = function() {
+    //this forgets everything, hence the speed bump
+    if (!confirm("This forgets every card you've been dealt on this device (your whole trail, all " + seen.length + " cards), so they can show up again. Start over?")) {
+        return;
+    }
+    seen = [];
+    pos = -1;
+    localStorage.removeItem("unique_seen");
+    dealOne();
+};
+
+//a card greets you instead of an empty page, like scryfall's random button
+dealOne();
+</script>
+{% endblock %}

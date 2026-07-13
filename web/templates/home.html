@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block bodyclass %}home{% endblock %}
+
+{# no header strip here, the hero below IS the search. the logo up top would
+   just be the same thing twice #}
+{% block header %}{% endblock %}
+
+{% block content %}
+    <div class="home-hero">
+        {# the recent searches get scattered around this layer by the script
+           below, floating gently like the card fan on scryfall's front page #}
+        <div id="recent-floats"></div>
+
+        <img class="home-logo" src="{{ url_for('static', filename='DelvefallLogo.png') }}" alt="Delvefall logo">
+        <h1 class="home-title">Delvefall</h1>
+        <p class="home-tag">Search any Magic card, find every card that does the same thing,
+        even when the wording is completely different.</p>
+
+        <form action="/search" method="get" class="search-form home-search" autocomplete="off">
+            <input type="text" name="q" placeholder="Search for a card by name..." autofocus>
+            <button type="submit">Search</button>
+            <div id="suggestions"></div>
+        </form>
+
+        {# the row future buttons slot into, one <a> each #}
+        <div class="home-buttons">
+            <a href="/unique">Unique Cards</a>
+        </div>
+    </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/*
+    the recent searches resting around the edges of the screen. the /search
+    page drops every card you look at into localStorage, and this places the
+    last few as clickable ghosts. the slots hug the viewport's corners and
+    sides, none of them anywhere near the search bar in the middle
+*/
+var recent = [];
+try {
+    recent = JSON.parse(localStorage.getItem("recent_searches") || "[]");
+} catch (e) {}
+
+var slots = [
+    {top: "12%", left: "6%"},
+    {top: "18%", right: "6%"},
+    {top: "30%", left: "12%"},
+    {top: "9%", right: "26%"},
+    {top: "72%", left: "9%"},
+    {top: "76%", right: "9%"},
+    {top: "88%", left: "28%"},
+    {top: "85%", right: "30%"}
+];
+
+var layer = document.getElementById("recent-floats");
+recent.slice(0, slots.length).forEach(function(name, i) {
+    var a = document.createElement("a");
+    a.className = "float-chip";
+    a.textContent = name;
+    a.href = "/search?q=" + encodeURIComponent(name);
+    a.title = "search " + name + " again";
+    var slot = slots[i];
+    a.style.top = slot.top;
+    if (slot.left) { a.style.left = slot.left; }
+    if (slot.right) { a.style.right = slot.right; }
+    layer.appendChild(a);
+});
+</script>
+{% endblock %}

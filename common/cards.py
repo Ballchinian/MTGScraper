@@ -32,6 +32,16 @@ def get_image(card):
     return ""
 
 
+def get_back_image(card):
+    #the back face's picture, for the turn-the-card-over button. only double
+    #faced layouts carry per-face image_uris (split and adventure cards have
+    #two faces too, but those share one picture and land in get_image above)
+    faces = card.get("card_faces")
+    if faces and len(faces) > 1 and "image_uris" in faces[1]:
+        return faces[1]["image_uris"].get("normal", "")
+    return ""
+
+
 def clean_line(line, card_name):
     #reminder text (the stuff in parens) is just for humans, the model doesnt need it
     line = re.sub(r"\(.*?\)", "", line)
@@ -54,8 +64,14 @@ def keep_card(card):
         return False  #skip the joke sets
     if card.get("layout") in SKIP_LAYOUTS:
         return False
-    if card.get("digital"):
-        return False  #arena/mtgo only cards (alchemy rebalances etc), never printed in paper
+    if card.get("digital") and card.get("legalities", {}).get("vintage", "not_legal") == "not_legal":
+        #arena/mtgo only cards (alchemy rebalances etc), never printed in paper.
+        #the vintage check matters: scryfall sometimes picks a digital printing
+        #to represent a real paper card (ancestral recall arrives as vintage
+        #masters, an mtgo set), and every real paper card is at least restricted
+        #or banned in vintage, so those stay. true digital-only cards are
+        #not_legal there and still get dropped
+        return False
     if not get_text(card).strip():
         return False  #vanilla creatures, basic lands etc, nothing to compare
     return True

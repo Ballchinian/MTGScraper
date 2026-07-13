@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Feedback review - Delvefall{% endblock %}
+
+{% block content %}
+    <h1>Feedback review</h1>
+
+    <h2>Pending ({{ pending|length }})</h2>
+    {% if not pending %}
+    <p class="message">Nothing waiting.</p>
+    {% endif %}
+    {% for r in pending %}
+    <div class="fb-row">
+        <div class="fb-head">
+            <span>#{{ r.id }} · {{ r.kind }} · {{ r.created }}</span>
+            <span>{{ r.ip }}</span>
+        </div>
+        <div class="fb-cards">
+            {% for c in r.cards %}
+            <div class="fb-card">
+                <div class="fb-role">{{ c.role }}</div>
+                {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+                <div>{{ c.name }}{% if c.pct is not none %} · {{ c.pct }}%{% endif %}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if r.reason %}<div class="fb-meta">reason: "{{ r.reason }}"</div>{% endif %}
+        {% if r.picked %}<div class="fb-meta">picked lines: {{ r.picked }}</div>{% endif %}
+        <div class="fb-meta">filters: {{ r.filters }}</div>
+        <div class="fb-meta">model: {{ r.model }}</div>
+        <div class="fb-actions">
+            <form method="post" action="/admin/act?key={{ key }}">
+                <input type="hidden" name="id" value="{{ r.id }}">
+                <button name="action" value="accepted">Accept</button>
+            </form>
+            <form method="post" action="/admin/act?key={{ key }}">
+                <input type="hidden" name="id" value="{{ r.id }}">
+                <button name="action" value="rejected" class="fb-quiet">Reject</button>
+            </form>
+        </div>
+    </div>
+    {% endfor %}
+
+    <h2>Accepted ({{ accepted|length }}): copy into the eval files</h2>
+    {% if not accepted %}
+    <p class="message">Nothing accepted yet.</p>
+    {% endif %}
+    {% if triplet_md %}
+    <h3>misplaced reports, for finetune/triplets.md</h3>
+    <div class="fb-export"><pre>{{ triplet_md }}</pre></div>
+    {% endif %}
+    {% if pair_md %}
+    <h3>missing reports, for finetune/pairs.md</h3>
+    <div class="fb-export"><pre>{{ pair_md }}</pre></div>
+    {% endif %}
+    {% for r in accepted %}
+    <div class="fb-done-row">
+        <span>#{{ r.id }} · {{ r.kind }} · {{ r.cards[0].name }} -> {{ r.cards[1].name }}</span>
+        <form method="post" action="/admin/act?key={{ key }}">
+            <input type="hidden" name="id" value="{{ r.id }}">
+            <button name="action" value="archived" class="fb-quiet">copied, archive it</button>
+        </form>
+        <form method="post" action="/admin/act?key={{ key }}">
+            <input type="hidden" name="id" value="{{ r.id }}">
+            <button name="action" value="pending" class="fb-quiet">back to pending</button>
+        </form>
+    </div>
+    {% endfor %}
+{% endblock %}

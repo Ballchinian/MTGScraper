@@ -1,5 +1,6 @@
 requests
 torch
+numpy
 sentence-transformers
 psycopg[binary]
 pgvector

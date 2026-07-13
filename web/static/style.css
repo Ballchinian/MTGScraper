@@ -10,7 +10,7 @@ body {
 }
 
 header {
-    background: #241d2e;
+    background: #0d1b2a;
     padding: 12px 16px;
 }
 
@@ -57,8 +57,18 @@ header {
 
 .search-form button:hover { background: #8a68bb; }
 
-/* the autocomplete dropdown, sits right under the search bar */
-#suggestions {
+.header-links a {
+    color: #cdd8e4;
+    font-size: 14px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.header-links a:hover { color: #fff; text-decoration: underline; }
+
+/* the autocomplete dropdown, sits right under the search bar. the report
+   bar's mini version borrows the exact same look */
+#suggestions, #report-suggest {
     display: none;
     position: absolute;
     top: 100%;
@@ -105,10 +115,18 @@ main {
     padding: 16px;
 }
 
-.searched-card img {
+/* the picture is inside a card-frame now (for the rotate/flip/transform
+   overlay), so the frame owns the column width and the image fills it */
+.searched-card .card-frame {
     width: 240px;
-    border-radius: 11px; /* real cards have rounded corners */
     flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.searched-card img {
+    width: 100%;
+    display: block;
+    border-radius: 11px; /* real cards have rounded corners */
 }
 
 .searched-info h1 { margin: 4px 0 2px 0; }
@@ -307,8 +325,487 @@ footer {
 
 footer a { color: #7857a5; }
 
+/* ---- the home page. dark like scryfall's front door, darkest at the top
+   and easing lighter on the way down ---- */
+
+body.home {
+    background: linear-gradient(180deg, #0d1b2a 0%, #14293f 55%, #23405e 100%);
+    color: #e8edf3;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+body.home main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: none;
+    width: 100%;
+}
+
+.home-hero {
+    position: relative;
+    text-align: center;
+    width: 100%;
+    max-width: 760px;
+    padding: 60px 20px 80px 20px;
+}
+
+.home-logo { width: 90px; height: 90px; }
+
+.home-title {
+    margin: 8px 0 4px 0;
+    font-size: 40px;
+    letter-spacing: 1px;
+}
+
+.home-tag {
+    color: #aebdcd;
+    margin: 0 auto 28px auto;
+    max-width: 440px;
+}
+
+/* the big search bar. white on the dark page so its unmissable, the small
+   header bars on the light pages are the inverse of this on purpose */
+.home-search {
+    max-width: 560px;
+    margin: 0 auto;
+    position: relative;
+    z-index: 2; /* floats above the recent-search chips */
+}
+
+.home-search input {
+    padding: 13px 16px;
+    font-size: 17px;
+    border-radius: 6px 0 0 6px;
+}
+
+.home-search button {
+    padding: 13px 26px;
+    font-size: 17px;
+    border-radius: 0 6px 6px 0;
+}
+
+.home-search #suggestions { text-align: left; color: #16161d; }
+
+/* the row under the search bar that future buttons slot into */
+.home-buttons {
+    margin-top: 22px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 2;
+}
+
+.home-buttons a {
+    color: #e8edf3;
+    text-decoration: none;
+    font-size: 15px;
+    padding: 9px 20px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.home-buttons a:hover { background: rgba(255, 255, 255, 0.16); }
+
+/* the recent searches resting around the edges of the screen. the layer
+   spans the whole viewport (not the 760px hero) so the slots sit far out
+   from the search bar instead of crowding it. pointer-events flips off on
+   the layer and back on for the chips, otherwise the invisible layer would
+   eat clicks and text selection over the hero */
+#recent-floats {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+.float-chip {
+    position: absolute;
+    pointer-events: auto;
+    color: #8fa5ba;
+    font-size: 14.5px;
+    text-decoration: none;
+    white-space: nowrap;
+    /* long card names get cut instead of stretching toward the middle */
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.75;
+}
+
+.float-chip:hover {
+    color: #fff;
+    opacity: 1;
+    text-decoration: underline;
+}
+
+body.home footer { color: #7f93a8; }
+
+body.home footer a { color: #a8b9ca; }
+
+/* ---- the /unique page ---- */
+
+.unique-intro { max-width: 720px; }
+
+.unique-intro h1 { margin-bottom: 8px; }
+
+.unique-intro p { color: #43404a; }
+
+.unique-status {
+    color: #8a8792;
+    font-size: 13.5px;
+    margin: 18px 0 0 0;
+    text-align: center;
+}
+
+/* the one dealt card, front and center like scryfall's random page */
+.unique-single {
+    max-width: 300px;
+    margin: 18px auto 0 auto;
+}
+
+/* the deal + history row. it lives above the card so it never moves when a
+   new card loads, spamming repeat needs zero scrolling */
+.unique-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+#unique-again {
+    background: #7857a5;
+    color: white;
+    border: 0;
+    border-radius: 4px;
+    padding: 10px 32px;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+#unique-again:hover { background: #8a68bb; }
+
+/* the trail arrows */
+#unique-back, #unique-fwd {
+    background: white;
+    color: #6c6874;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#unique-back:hover:enabled, #unique-fwd:hover:enabled { border-color: #a89fb5; color: #16161d; }
+
+#unique-back:disabled, #unique-fwd:disabled { opacity: 0.35; cursor: default; }
+
+/* sideways cards (battles, split cards) start pre-rotated so the text is
+   readable. the wrapper flips to landscape proportions and the image gets
+   rotated into it: the width is the card's own aspect ratio (488/680) so
+   after the 90 degree turn it fills the box exactly */
+.card-frame.sideways {
+    aspect-ratio: 680 / 488;
+    overflow: hidden;
+}
+
+.card-frame.sideways img {
+    width: 71.76%;
+    transform: rotate(90deg) translateY(-100%);
+    transform-origin: top left;
+}
+
+/* kamigawa flip cards read upside down in their bottom half, so their
+   rotate is a 180 */
+.card-frame.flipped img { transform: rotate(180deg); }
+
+/* the zoom-on-hover from the results grid would overwrite the rotation
+   transforms, so rotated cards keep their rotation instead */
+.card-frame.sideways img:hover { transform: rotate(90deg) translateY(-100%); }
+
+.card-frame.flipped img:hover { transform: rotate(180deg); }
+
+/* the rotate / flip / transform buttons, an overlay that fades in when the
+   mouse is over the picture. translucent and hugging the bottom edge so it
+   never really covers the art, and absolutely positioned so no layout
+   anywhere has to know whether a card has buttons */
+.card-frame { position: relative; }
+
+.card-overlay {
+    position: absolute;
+    bottom: 5%;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none; /* an invisible overlay must not steal clicks from the card link */
+}
+
+.card-frame:hover .card-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.card-overlay button {
+    background: rgba(13, 27, 42, 0.65);
+    color: white;
+    border: 0;
+    border-radius: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.card-overlay button:hover { background: rgba(13, 27, 42, 0.92); }
+
+/* start over lives in its own quiet corner way below the repeat button so a
+   misclick can't nuke the seen list, and it looks nothing like the purple
+   action buttons on purpose */
+.unique-reset-wrap {
+    text-align: center;
+    margin-top: 120px;
+}
+
+#unique-reset {
+    background: white;
+    color: #6c6874;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    padding: 8px 24px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#unique-reset:hover { border-color: #a89fb5; color: #16161d; }
+
+.more-lines a { color: #7857a5; }
+
+/* ---- the feedback loop: report flags, the report bar, /admin ---- */
+
+/* the "expected a card that isn't here?" link riding the results heading */
+.report-open {
+    float: right;
+    font-weight: normal;
+    font-size: 13px;
+    color: #7857a5;
+    text-decoration: none;
+    margin-top: 8px;
+}
+
+.report-open:hover { text-decoration: underline; }
+
+/* the flag under each result. quiet gray until hovered so the grid doesn't
+   read as a wall of complaints */
+.report-flag {
+    display: block;
+    background: none;
+    border: 0;
+    padding: 0;
+    margin-top: 3px;
+    color: #b0aab8;
+    font-size: 11.5px;
+    cursor: pointer;
+}
+
+.report-flag:hover { color: #c23c2e; text-decoration: underline; }
+
+/* the card a misplaced report is about */
+.result.flagged {
+    outline: 2px solid #c23c2e;
+    outline-offset: 4px;
+    border-radius: 4px;
+}
+
+#report-bar {
+    background: white;
+    border: 1px solid #e0dee5;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 14px 0;
+    font-size: 14px;
+}
+
+#report-title { margin: 0 0 10px 0; font-weight: 600; }
+
+.report-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.report-pick {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 220px;
+}
+
+.report-pick input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#report-reason {
+    flex: 2;
+    min-width: 220px;
+    padding: 8px 12px;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+}
+
+#report-send {
+    background: #7857a5;
+    color: white;
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#report-send:hover { background: #8a68bb; }
+
+#report-cancel, .fb-quiet {
+    background: white;
+    color: #6c6874;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#report-cancel:hover, .fb-quiet:hover { border-color: #a89fb5; color: #16161d; }
+
+.report-why {
+    color: #8a8792;
+    font-size: 12.5px;
+    margin: 10px 0 0 0;
+}
+
+#report-msg {
+    margin: 10px 0 0 0;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+#report-msg.good { background: #eef7ef; border: 1px solid #bfdcc4; }
+
+#report-msg.bad { background: #fff3f3; border: 1px solid #e8c4c4; }
+
+/* the /admin review page */
+.fb-row {
+    background: white;
+    border: 1px solid #e0dee5;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 14px;
+}
+
+.fb-head {
+    display: flex;
+    justify-content: space-between;
+    color: #8a8792;
+    font-size: 12.5px;
+}
+
+.fb-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 10px;
+}
+
+.fb-card {
+    width: 150px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.fb-card img {
+    width: 100%;
+    border-radius: 4.75% / 3.5%;
+}
+
+.fb-role {
+    color: #8a8792;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.fb-meta {
+    color: #6c6874;
+    font-size: 12.5px;
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+}
+
+.fb-actions, .fb-done-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.fb-actions button[value="accepted"] {
+    background: #2c7d4e;
+    color: white;
+    border: 0;
+    border-radius: 4px;
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.fb-actions button[value="accepted"]:hover { background: #35935d; }
+
+.fb-done-row {
+    background: white;
+    border: 1px solid #e0dee5;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.fb-export pre {
+    background: #0d1b2a;
+    color: #e8edf3;
+    padding: 14px;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* under ~900px the side bands cant stay far from the centered hero, and
+   "nowhere near the search bar" beats "technically visible", so they go */
+@media (max-width: 900px) {
+    .float-chip { display: none; }
+}
+
 @media (max-width: 600px) {
     .searched-card { flex-direction: column; }
-    .searched-card img { width: 100%; }
+    .searched-card .card-frame { width: 100%; }
     .header-inner { flex-wrap: wrap; }
+    .home-title { font-size: 32px; }
 }

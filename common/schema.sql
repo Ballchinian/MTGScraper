@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS cards (
     price_eur       numeric,  --stored for a future currency toggle, the site only shows usd
     cmc             numeric NOT NULL DEFAULT 0,  --mana value. numeric because scryfall says so, in practice whole numbers
     game_changer    boolean NOT NULL DEFAULT false,
-    legal_commander boolean NOT NULL DEFAULT true
+    legal_commander boolean NOT NULL DEFAULT true,
+    layout          text NOT NULL DEFAULT 'normal',
+    image_back      text NOT NULL DEFAULT ''
 );
 
 --databases created before the filter columns existed pick them up here.
@@ -38,19 +40,47 @@ ALTER TABLE cards ADD COLUMN IF NOT EXISTS cmc numeric NOT NULL DEFAULT 0;
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS game_changer boolean NOT NULL DEFAULT false;
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS legal_commander boolean NOT NULL DEFAULT true;
 
+--the /unique page. a card's uniqueness is its most isolated line: 1 minus
+--the best match that line has anywhere else in the game. its judged per
+--line on purpose, a card with Flying plus one ability nobody else has IS
+--unique in the "could define a deck" sense, even though the Flying line
+--matches thousands of cards. unique_line remembers which line earned the
+--score so the page can show it. both stay NULL for cards with no
+--searchable lines, which quietly keeps them out of the unique deck
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS uniqueness real;
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS unique_line text;
+
+--how the card physically works, straight from scryfall: 'split' and battle
+--type lines mean the picture is printed sideways and the site pre-rotates
+--it readable, 'flip' means the bottom half reads upside down, and
+--image_back holds the other face's picture when one exists so the card can
+--be turned over on the page
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS layout text NOT NULL DEFAULT 'normal';
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS image_back text NOT NULL DEFAULT '';
+
 --trigram index so the name searches (prefix, substring, fuzzy) stay quick
 CREATE INDEX IF NOT EXISTS cards_name_trgm ON cards USING gin (name gin_trgm_ops);
 
 --one row per line of rules text, with its embedding (768 numbers from my
 --fine tuned embeddinggemma, normalized, so cosine distance works). databases
 --still on the old 384 column get moved over by update.py when it notices
---the model changed
+--the model changed.
+--
+--nn_sim is the line's nearest neighbor similarity: how close the closest
+--line on any OTHER card gets to this one. 1.0 means some other card has
+--this exact ability, low means nothing else in the game does anything like
+--it. update.py fills it in after the embeddings, its search turned inside
+--out (search asks whats closest, this asks how far away even the closest
+--thing is)
 CREATE TABLE IF NOT EXISTS lines (
     id        bigserial PRIMARY KEY,
     oracle_id uuid NOT NULL REFERENCES cards(oracle_id) ON DELETE CASCADE,
     line_text text NOT NULL,
-    embedding vector(768) NOT NULL
+    embedding vector(768) NOT NULL,
+    nn_sim    real
 );
+
+ALTER TABLE lines ADD COLUMN IF NOT EXISTS nn_sim real;
 
 --lets us grab one card's lines instantly at search time
 CREATE INDEX IF NOT EXISTS lines_oracle_id ON lines (oracle_id);
@@ -74,4 +104,34 @@ CREATE TABLE IF NOT EXISTS line_stats (
 CREATE TABLE IF NOT EXISTS meta (
     key   text PRIMARY KEY,
     value text
+);
+
+--user reports from the search page, the raw material for the next round of
+--the eval files. kind 'missing' means "this good card should have been in
+--the results" and carries expected_id (a future pairs.md entry), kind
+--'misplaced' means "this bad card shouldnt be here" and carries got_id plus
+--the user's reason in their own words (a future triplets.md negative).
+--names are snapshotted alongside the ids on purpose: cards can vanish from
+--the cards table between the report and the review, and a report thats lost
+--its cards should still read. the percents and embed_model pin down what
+--the site actually said at report time, since both move whenever the model
+--changes. no foreign keys, same reason
+CREATE TABLE IF NOT EXISTS feedback (
+    id            bigserial PRIMARY KEY,
+    kind          text NOT NULL,
+    anchor_id     uuid NOT NULL,
+    anchor_name   text NOT NULL,
+    expected_id   uuid,
+    expected_name text,
+    got_id        uuid,
+    got_name      text,
+    expected_pct  int,
+    got_pct       int,
+    reason        text NOT NULL DEFAULT '',
+    picked_lines  text NOT NULL DEFAULT '',
+    filters       text NOT NULL DEFAULT '',
+    embed_model   text NOT NULL DEFAULT '',
+    ip            text NOT NULL DEFAULT '',
+    status        text NOT NULL DEFAULT 'pending',
+    created_at    timestamptz DEFAULT now()
 );

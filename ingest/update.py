@@ -19,7 +19,7 @@ import requests
 import psycopg
 from pgvector.psycopg import register_vector
 
-from common.cards import HEADERS, keep_card, split_lines, get_text, get_image
+from common.cards import HEADERS, keep_card, split_lines, get_text, get_image, get_back_image
 
 BULK_URL = "https://api.scryfall.com/bulk-data"
 DOWNLOAD_FILE = "oracle-cards.json"
@@ -76,6 +76,89 @@ def card_hash(card):
     return hashlib.sha256((card["name"] + "\n" + get_text(card)).encode("utf-8")).hexdigest()
 
 
+def recompute_uniqueness(conn):
+    #fills lines.nn_sim (how close the closest line on any OTHER card gets to
+    #this one) and rolls the scores up into cards.uniqueness for the /unique
+    #page. its the search query turned inside out: search asks "whats
+    #closest", this asks "how far away is even the closest thing".
+    #
+    #everything gets recomputed from scratch whenever lines changed, same
+    #philosophy as line_stats. incremental sounds tempting until you notice a
+    #NEW card can make an OLD card less unique (it might be its new nearest
+    #neighbor), and a DELETED card can make its old neighbors MORE unique, so
+    #patching only the changed rows would quietly rot every score around them.
+    #
+    #and yes, this pulls every embedding out of postgres and does the math in
+    #numpy, the exact thing the web app was rescued from. the difference is
+    #WHERE: asking pgvector for 31k exact nearest neighbors takes ~370ms each
+    #on the railway box (measured), call it three hours of pegged production
+    #database, while one big matrix multiply on the ingest runner takes about
+    #a minute. all-pairs work belongs next to the big cpu, one-query-at-a-time
+    #work belongs next to the data. the web server still never touches this
+    print("recomputing uniqueness scores...")
+    import numpy as np  #late import like torch below, the no-op runs skip it
+
+    ids = []
+    owners = []      #row i belongs to card owners[i]
+    vecs = []
+    for lid, oid, vec in conn.execute("SELECT id, oracle_id, embedding FROM lines"):
+        ids.append(lid)
+        owners.append(oid)
+        #pgvector hands back its own Vector class, not a numpy array
+        vecs.append(vec.to_numpy())
+    if not ids:
+        return  #empty lines table, nothing to score
+    emb = np.asarray(vecs, dtype=np.float32)
+    print("  pulled " + str(len(ids)) + " embeddings, multiplying...")
+
+    #which rows belong to each card, so a card never counts as its own neighbor
+    rows_of_card = {}
+    for i, oid in enumerate(owners):
+        rows_of_card.setdefault(oid, []).append(i)
+
+    #the embeddings are normalized so cosine similarity is just a dot product.
+    #block by block keeps the similarity matrix at ~100mb instead of 13gb
+    nn_sim = np.zeros(len(ids), dtype=np.float32)
+    block = 512
+    for start in range(0, len(ids), block):
+        sims = emb[start:start + block] @ emb.T
+        for r in range(sims.shape[0]):
+            sims[r, rows_of_card[owners[start + r]]] = -2.0  #below any real cosine
+        nn_sim[start:start + block] = sims.max(axis=1)
+
+    #COPY the scores into a temp table and update from there, one round trip
+    #instead of 58k. the IS DISTINCT FROM means unchanged rows dont get
+    #rewritten, which on a normal day is nearly all of them
+    with conn.cursor() as cur:
+        cur.execute("CREATE TEMP TABLE nn_tmp (id bigint PRIMARY KEY, nn_sim real) ON COMMIT DROP")
+        with cur.copy("COPY nn_tmp (id, nn_sim) FROM STDIN") as copy:
+            for i, lid in enumerate(ids):
+                copy.write_row((lid, float(nn_sim[i])))
+        cur.execute("""
+            UPDATE lines l SET nn_sim = t.nn_sim
+            FROM nn_tmp t
+            WHERE l.id = t.id AND l.nn_sim IS DISTINCT FROM t.nn_sim
+        """)
+
+        #a card is as unique as its most isolated line. DISTINCT ON keeps one
+        #row per card and the ORDER BY makes it the line with the lowest
+        #nearest neighbor similarity, so a card with Flying plus one ability
+        #nobody else has still counts as unique, the Flying line just never
+        #wins the argmin
+        cur.execute("""
+            UPDATE cards c SET uniqueness = (1 - s.nn_sim)::real, unique_line = s.line_text
+            FROM (SELECT DISTINCT ON (oracle_id) oracle_id, nn_sim, line_text
+                  FROM lines
+                  WHERE nn_sim IS NOT NULL
+                  ORDER BY oracle_id, nn_sim ASC) s
+            WHERE c.oracle_id = s.oracle_id
+              AND (c.uniqueness IS DISTINCT FROM (1 - s.nn_sim)::real
+                   OR c.unique_line IS DISTINCT FROM s.line_text)
+        """)
+    conn.commit()
+    print("uniqueness done")
+
+
 def main():
     db_url = os.environ.get("DATABASE_URL")
     if not db_url:
@@ -113,7 +196,13 @@ def main():
     #model changed, then theres a full rebuild to do either way
     row = conn.execute("SELECT value FROM meta WHERE key = 'scryfall_updated_at'").fetchone()
     if not model_changed and row and row[0] == updated_at:
-        print("already processed the bulk file from " + updated_at + ", nothing to do")
+        #the bulk file might be old news while the uniqueness scores arent:
+        #the first run after the /unique feature shipped, or a recompute that
+        #died halfway. any line without a score means theres finishing to do
+        if conn.execute("SELECT 1 FROM lines WHERE nn_sim IS NULL LIMIT 1").fetchone():
+            recompute_uniqueness(conn)
+        else:
+            print("already processed the bulk file from " + updated_at + ", nothing to do")
         conn.close()
         return
 
@@ -137,7 +226,7 @@ def main():
 
     if model_changed:
         #forget the stored hashes so every card counts as new and gets
-        #re-embedded. the old vectors stay put for now, the site keeps
+        #embedded again. the old vectors stay put for now, the site keeps
         #searching on them while the new ones compute
         have = {}
 
@@ -154,7 +243,8 @@ def main():
                           get_text(c), get_image(c), c.get("scryfall_uri", ""), h,
                           "".join(c.get("color_identity", [])), prices.get("usd"), prices.get("eur"),
                           c.get("cmc", 0), c.get("game_changer", False),
-                          c.get("legalities", {}).get("commander") == "legal"))
+                          c.get("legalities", {}).get("commander") == "legal",
+                          c.get("layout", "normal"), get_back_image(c)))
         old = have.get(c["oracle_id"])
         if old is None:
             new_cards.append((c, h))
@@ -184,8 +274,9 @@ def main():
     with conn.cursor() as cur:
         cur.executemany("""
             INSERT INTO cards (oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, text_hash,
-                               color_identity, price_usd, price_eur, cmc, game_changer, legal_commander, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                               color_identity, price_usd, price_eur, cmc, game_changer, legal_commander,
+                               layout, image_back, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (oracle_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 mana_cost = EXCLUDED.mana_cost,
@@ -200,6 +291,8 @@ def main():
                 cmc = EXCLUDED.cmc,
                 game_changer = EXCLUDED.game_changer,
                 legal_commander = EXCLUDED.legal_commander,
+                layout = EXCLUDED.layout,
+                image_back = EXCLUDED.image_back,
                 updated_at = now()
         """, card_rows)
 
@@ -276,6 +369,15 @@ def main():
         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
     """, (EMBED_MODEL,))
     conn.commit()
+
+    #uniqueness runs after the commit above on purpose: its derived data, so
+    #if it dies halfway the database is still fully consistent and the NULL
+    #check at the gate finishes the job on the next run. the NULL check here
+    #catches databases from before the /unique feature even on days when no
+    #cards changed
+    if work or stale or conn.execute("SELECT 1 FROM lines WHERE nn_sim IS NULL LIMIT 1").fetchone():
+        recompute_uniqueness(conn)
+
     conn.close()
     print("done! " + str(len(new_cards)) + " added, " + str(len(changed_cards)) + " updated, " + str(len(stale)) + " removed")
 

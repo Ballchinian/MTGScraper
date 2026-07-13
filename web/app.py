@@ -4,20 +4,70 @@
 #this process stays tiny and never touches torch
 
 import re
+import os
 import math
+import uuid
+import json
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, abort
 
 from db import pool
 
 app = Flask(__name__)
 
+#user reports from the results page (see the /feedback route). the table
+#really lives in common/schema.sql, but that file ships with the ingest and
+#railway only deploys the web folder, so the web app makes sure its own
+#table exists, same reasoning as clean_line being copied below. names are
+#snapshotted next to the ids because cards can vanish from the cards table
+#before a report gets reviewed, and no foreign keys for the same reason
+with pool.connection() as _conn:
+    _conn.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id            bigserial PRIMARY KEY,
+            kind          text NOT NULL,
+            anchor_id     uuid NOT NULL,
+            anchor_name   text NOT NULL,
+            expected_id   uuid,
+            expected_name text,
+            got_id        uuid,
+            got_name      text,
+            expected_pct  int,
+            got_pct       int,
+            reason        text NOT NULL DEFAULT '',
+            picked_lines  text NOT NULL DEFAULT '',
+            filters       text NOT NULL DEFAULT '',
+            embed_model   text NOT NULL DEFAULT '',
+            ip            text NOT NULL DEFAULT '',
+            status        text NOT NULL DEFAULT 'pending',
+            created_at    timestamptz DEFAULT now()
+        )
+    """)
+
+#the review page at /admin only exists when this is set in the environment
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
+
 #the display columns the frontend needs, so every query grabs the same set
-CARD_FIELDS = "oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, price_usd"
+CARD_FIELDS = "oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, price_usd, layout, image_back"
 
 #the choices in the type filter dropdown. also acts as a whitelist so
 #nothing weird from the url ends up inside a LIKE pattern
 CARD_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker", "Battle", "Land"]
+
+#the /unique page deals this many cards per request. one at a time, its the
+#counterpart to scryfall's random card button
+UNIQUE_PAGE = 1
+
+#default minimum uniqueness (0-100, higher = more unique). a card's
+#uniqueness is 100 minus the best match its most isolated line has anywhere
+#else in the game, precomputed by the ingest into cards.uniqueness.
+#
+#measured on the real data (2026-07-13): the median card only scores ~8,
+#because most cards have a near twin somewhere. 30 keeps the top ~2.4%
+#(739 cards), which is where the genuinely deck-defining stuff lives, and
+#nothing in the whole game clears 51, so the input's ceiling of 100 is
+#theoretical. lowering the bar is one keystroke on the page
+UNIQUE_DEFAULT = 30
 
 
 #copied from common/cards.py because railway only deploys the web folder.
@@ -70,6 +120,13 @@ def find_card(query):
 #and /more both use them, so the load more button sees exactly the same
 #filters and picked lines as the page it's glued onto
 
+def sideways(layout, type_line):
+    #battles and split cards are printed sideways, so their pictures start
+    #pre-rotated readable. battles dont get their own layout from scryfall
+    #(theyre transform cards), but Battle always leads the type line
+    return layout == "split" or "Battle" in (type_line or "")
+
+
 def read_filters():
     f = {}
     #the color checkboxes arrive as repeated params like colors=W&colors=U.
@@ -88,8 +145,13 @@ def read_filters():
     if t not in CARD_TYPES:
         t = ""
     f["type"] = t
+    f["cmdr"] = request.args.get("cmdr") == "1"
     f["gc"] = request.args.get("gc") == "1"
-    f["legal"] = request.args.get("legal") == "1"
+    #flipped from the launch version: most visitors are commander players, so
+    #cards that arent legal stay hidden unless this asks for them. old shared
+    #links with legal=1 wanted exactly what the default now does, so they
+    #still mean the same thing
+    f["illegal"] = request.args.get("illegal") == "1"
     return f
 
 
@@ -182,9 +244,16 @@ def filter_sql(filters):
     if filters["type"]:
         where += " AND c.type_line ILIKE %s"
         params.append("%" + filters["type"] + "%")
+    if filters["cmdr"]:
+        #commander targets. both words have to be in the type line
+        #("Legendary Creature - Elf Warrior"), matching them separately also
+        #catches things like "Legendary Enchantment Creature"
+        where += " AND c.type_line ILIKE %s AND c.type_line ILIKE %s"
+        params.append("%Legendary%")
+        params.append("%Creature%")
     if filters["gc"]:
         where += " AND NOT c.game_changer"
-    if filters["legal"]:
+    if not filters["illegal"]:
         where += " AND c.legal_commander"
     return where, params
 
@@ -305,10 +374,14 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         if c["price_usd"] is not None:
             price = "$" + str(c["price_usd"])
         results.append({
+            "oracle_id": str(oid),  #the report flag needs to say which card it's flagging
             "name": c["name"],
             "mana_cost": c["mana_cost"],
             "type_line": c["type_line"],
             "image": c["image"],
+            "image_back": c["image_back"] or "",
+            "sideways": sideways(c["layout"], c["type_line"]),
+            "flip": c["layout"] == "flip",
             "scryfall_uri": c["scryfall_uri"],
             "percent": int(round(sim * 100)),
             "our_line": our_line,
@@ -322,13 +395,29 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
 
 @app.route("/")
 def home():
+    #the landing page. search moved to /search when this page arrived, but
+    #the launch thread links look like /?q=..., so anything with a query
+    #gets forwarded there with its whole query string intact
+    if request.args.get("q"):
+        return redirect("/search?" + request.query_string.decode(), code=301)
+    return render_template("home.html")
+
+
+@app.route("/search")
+def search():
     query = request.args.get("q", "")
     if not query:
-        return render_template("index.html")
+        return redirect("/")
 
     card = find_card(query)
     if card is None:
-        return render_template("index.html", query=query, not_found=True)
+        return render_template("search.html", query=query, not_found=True)
+
+    #the searched card's picture gets the same rotate/flip/transform frame
+    #as everything else, the template just needs the two flags
+    card = dict(card)
+    card["sideways"] = sideways(card["layout"], card["type_line"])
+    card["flip"] = card["layout"] == "flip"
 
     filters = read_filters()
     min_pct = read_min()
@@ -336,9 +425,107 @@ def home():
     card_lines, picked = build_lines(card, read_picked())
 
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, min_pct, sort)
-    return render_template("index.html", query=query, card=card, card_lines=card_lines,
+    return render_template("search.html", query=query, card=card, card_lines=card_lines,
                            picked_count=len(picked), results=results, has_more=has_more,
                            weak_count=weak_count, min_pct=min_pct, types=CARD_TYPES)
+
+
+def read_unique():
+    #the u param on /unique/cards, how unique a card has to be before the
+    #shuffle is allowed to deal it. same clamping story as read_min
+    try:
+        u = int(request.args.get("u", UNIQUE_DEFAULT))
+    except ValueError:
+        u = UNIQUE_DEFAULT
+    return max(0, min(u, 100))
+
+
+@app.route("/unique")
+def unique():
+    return render_template("unique.html", types=CARD_TYPES, unique_default=UNIQUE_DEFAULT)
+
+
+def card_json(c):
+    #one dealt (or revisited) card the way the /unique frontend wants it.
+    #layout and image_back are what let the page pre-rotate sideways cards
+    #and offer the turn-over button
+    price = ""
+    if c["price_usd"] is not None:
+        price = "$" + str(c["price_usd"])
+    return {
+        "oracle_id": str(c["oracle_id"]),
+        "name": c["name"],
+        "mana_cost": c["mana_cost"],
+        "type_line": c["type_line"],
+        "image": c["image"],
+        "image_back": c["image_back"] or "",
+        "sideways": sideways(c["layout"], c["type_line"]),
+        "flip": c["layout"] == "flip",
+        "scryfall_uri": c["scryfall_uri"],
+        "price": price,
+        "percent": int(round((c["uniqueness"] or 0) * 100)),
+        "unique_line": c["unique_line"] or "",
+    }
+
+
+@app.route("/unique/cards", methods=["POST"])
+def unique_cards():
+    #deals UNIQUE_PAGE random cards whose uniqueness clears the bar, skipping
+    #ones the browser has already been shown. the filters ride in on the query
+    #string like everywhere else, but the seen list arrives as a json body
+    #because after enough dealing it outgrows what a url can carry. its a
+    #random draw from everything that qualifies, not the top of a ranking, so
+    #every press feels like a fresh pack
+    filters = read_filters()
+    u = read_unique()
+    body = request.get_json(silent=True) or {}
+    seen = []
+    for s in body.get("seen", []):
+        #only real uuids get through to the query, anything else in
+        #localStorage was not put there by us
+        try:
+            seen.append(str(uuid.UUID(str(s))))
+        except ValueError:
+            pass
+
+    where, fparams = filter_sql(filters)
+    #the -0.5 makes the sql cutoff agree with the rounded percent the page
+    #shows: a card displayed as exactly u% still qualifies at u
+    cond = """
+        FROM cards c
+        WHERE c.uniqueness * 100.0 >= %s - 0.5
+          AND NOT (c.oracle_id = ANY(%s::uuid[]))""" + where
+    params = [u, seen] + fparams
+    with pool.connection() as conn:
+        remaining = conn.execute("SELECT count(*) AS n" + cond, params).fetchone()["n"]
+        rows = conn.execute("SELECT " + CARD_FIELDS + ", uniqueness, unique_line" + cond +
+                            " ORDER BY random() LIMIT %s", params + [UNIQUE_PAGE]).fetchall()
+
+    cards = []
+    for c in rows:
+        cards.append(card_json(c))
+    #remaining counts whats left AFTER this deal, so the frontend knows when
+    #the well is dry without another request
+    return {"cards": cards, "remaining": remaining - len(cards)}
+
+
+@app.route("/unique/card")
+def unique_card():
+    #one card the browser has already been dealt, looked up by id for the
+    #back/forward history arrows on /unique. same shape as a fresh deal so
+    #the frontend renders both identically. cards can vanish from the
+    #database between visits (scryfall drops them, filters tighten), so
+    #null just means "this history entry died"
+    try:
+        oid = str(uuid.UUID(request.args.get("id", "")))
+    except ValueError:
+        return {"card": None}
+    with pool.connection() as conn:
+        c = conn.execute("SELECT " + CARD_FIELDS + ", uniqueness, unique_line FROM cards WHERE oracle_id = %s",
+                         (oid,)).fetchone()
+    if c is None:
+        return {"card": None}
+    return {"card": card_json(c)}
 
 
 #the load more button on the results page calls this and gets json back. it
@@ -354,6 +541,280 @@ def more():
     weak = request.args.get("weak") == "1"
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, read_filters(), read_min(), read_sort(), offset, weak=weak)
     return {"results": results, "has_more": has_more, "weak_count": weak_count}
+
+
+#---- user feedback: "a card is missing" / "this card shouldn't be here" ----
+
+def client_ip():
+    #railway sits behind a proxy, so the visitor's real address is the first
+    #entry of the forwarded list, not remote_addr
+    fwd = request.headers.get("X-Forwarded-For", "")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.remote_addr or ""
+
+
+def best_sim(conn, anchor_id, other_id, picked):
+    #the best real similarity between the anchor's lines (only the picked
+    #ones, if any are picked) and any line of the other card, the same
+    #number the results page prints next to a card. None means the other
+    #card has no searchable lines at all
+    sql = """
+        SELECT max(1 - (a.embedding <=> b.embedding)) AS sim
+        FROM lines a, lines b
+        WHERE a.oracle_id = %s AND b.oracle_id = %s
+    """
+    params = [anchor_id, other_id]
+    if picked:
+        sql += " AND a.line_text = ANY(%s)"
+        params.append(list(picked))
+    sim = conn.execute(sql, params).fetchone()["sim"]
+    if sim is None:
+        return None
+    return int(round(sim * 100))
+
+
+def filter_reasons(card, filters):
+    #why the current filters hide this card, said in the user's language.
+    #mirrors filter_sql condition by condition; an empty list means the
+    #filters let the card through and something else explains its absence
+    reasons = []
+    if filters["colors"]:
+        for letter in card["color_identity"]:
+            if letter not in filters["colors"]:
+                reasons.append("its color identity (" + card["color_identity"] + ") doesn't fit the colors you picked")
+                break
+    if (filters["pmin"] is not None or filters["pmax"] is not None) and card["price_usd"] is None:
+        reasons.append("it has no listed price, and any price filter hides unpriced cards")
+    elif filters["pmin"] is not None and float(card["price_usd"]) < filters["pmin"]:
+        reasons.append("its price ($" + str(card["price_usd"]) + ") is under your minimum")
+    elif filters["pmax"] is not None and float(card["price_usd"]) > filters["pmax"]:
+        reasons.append("its price ($" + str(card["price_usd"]) + ") is over your maximum")
+    if filters["mvmin"] is not None and float(card["cmc"]) < filters["mvmin"]:
+        reasons.append("its mana value (" + str(card["cmc"]) + ") is under your minimum")
+    if filters["mvmax"] is not None and float(card["cmc"]) > filters["mvmax"]:
+        reasons.append("its mana value (" + str(card["cmc"]) + ") is over your maximum")
+    if filters["type"] and filters["type"].lower() not in (card["type_line"] or "").lower():
+        reasons.append("its type line doesn't include " + filters["type"])
+    if filters["cmdr"]:
+        tl = (card["type_line"] or "").lower()
+        if "legendary" not in tl or "creature" not in tl:
+            reasons.append("it can't be a commander and \"commanders only\" is on")
+    if filters["gc"] and card["game_changer"]:
+        reasons.append("it's a game changer and \"hide game changers\" is on")
+    if not filters["illegal"] and not card["legal_commander"]:
+        reasons.append("it isn't commander-legal, and those stay hidden unless \"include illegal\" is ticked")
+    return reasons
+
+
+@app.route("/feedback", methods=["POST"])
+def feedback():
+    #the report bar on the results page posts here. the page's whole query
+    #string rides along exactly like /more does, so the report is judged
+    #against the same anchor, picked lines, filters and cutoff the user was
+    #actually looking at.
+    #
+    #two kinds: 'missing' (a good card that should have been in the results,
+    #a future pairs.md entry) and 'misplaced' (a bad card that shouldn't be
+    #here, with the user's reason in their own words, a future triplets.md
+    #negative). nobody is asked to name a replacement card, most players
+    #couldn't quote one on the spot. missing reports get diagnosed before
+    #anything is stored: when a filter is what's hiding the card, the user
+    #learns that on the spot and the review queue never hears about it,
+    #because that's not the model's fault
+    body = request.get_json(silent=True) or {}
+    kind = body.get("kind", "")
+    if kind not in ("missing", "misplaced"):
+        return {"ok": False, "stored": False, "msg": "That report didn't make sense to the server, sorry."}
+
+    card = find_card(request.args.get("q", ""))
+    if card is None:
+        return {"ok": False, "stored": False, "msg": "Lost track of which card you searched, try reloading the page."}
+
+    reason = str(body.get("reason", "")).strip()[:500]
+
+    filters = read_filters()
+    min_pct = read_min()
+    _, picked = build_lines(card, read_picked())
+
+    with pool.connection() as conn:
+        #a gentle lid, there's no login so this is all the abuse control there is
+        ip = client_ip()
+        recent = conn.execute("SELECT count(*) AS n FROM feedback WHERE ip = %s AND created_at > now() - interval '1 hour'",
+                              (ip,)).fetchone()["n"]
+        if recent >= 20:
+            return {"ok": False, "stored": False, "msg": "That's a lot of reports for one hour. Thank you, but please come back later."}
+
+        #which model's numbers this report is about, straight from the ingest's bookkeeping
+        row = conn.execute("SELECT value FROM meta WHERE key = 'embed_model'").fetchone()
+        model = row["value"] if row else ""
+        snap = dict(filters)
+        snap["min"] = min_pct
+        snap["sort"] = read_sort()
+
+        if kind == "missing":
+            expected_name = str(body.get("expected", "")).strip()[:200]
+            expected = find_card(expected_name) if expected_name else None
+            if expected is None:
+                return {"ok": False, "stored": False, "msg": 'Couldn\'t find a card called "' + expected_name + '", check the spelling?'}
+            if expected["oracle_id"] == card["oracle_id"]:
+                return {"ok": False, "stored": False, "msg": expected["name"] + " is the card you searched for."}
+            expected_pct = best_sim(conn, card["oracle_id"], expected["oracle_id"], picked)
+            if expected_pct is None:
+                return {"ok": False, "stored": False, "msg": expected["name"] + " has no rules text the matcher can search, so it can never appear."}
+            full = conn.execute("""SELECT color_identity, price_usd, cmc, type_line, game_changer, legal_commander
+                                   FROM cards WHERE oracle_id = %s""", (expected["oracle_id"],)).fetchone()
+            reasons = filter_reasons(full, filters)
+            if reasons:
+                return {"ok": True, "stored": False,
+                        "msg": expected["name"] + " matches at " + str(expected_pct) + "%, but your filters hide it: " + "; ".join(reasons) + "."}
+            if expected_pct >= min_pct:
+                return {"ok": True, "stored": False,
+                        "msg": expected["name"] + " is in the results at " + str(expected_pct) + "%, it may just be further down the list."}
+            #a real gap: nothing hides the card, the model just scores it under the cutoff
+            conn.execute("""INSERT INTO feedback (kind, anchor_id, anchor_name, expected_id, expected_name,
+                                                  expected_pct, reason, picked_lines, filters, embed_model, ip)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                         (kind, card["oracle_id"], card["name"], expected["oracle_id"], expected["name"],
+                          expected_pct, reason, "\n".join(picked), json.dumps(snap), model, ip))
+            return {"ok": True, "stored": True,
+                    "msg": "Logged. " + expected["name"] + " only scores " + str(expected_pct) + "% against the " + str(min_pct) +
+                           "% cutoff (for now it's behind the weaker-matches button). Reports like this grade the next model."}
+
+        #misplaced: the flagged card plus a few words on why it doesn't belong
+        try:
+            got_id = str(uuid.UUID(str(body.get("got_id", ""))))
+        except ValueError:
+            return {"ok": False, "stored": False, "msg": "Lost track of which result you flagged, try reloading the page."}
+        got = conn.execute("SELECT oracle_id, name FROM cards WHERE oracle_id = %s", (got_id,)).fetchone()
+        if got is None:
+            return {"ok": False, "stored": False, "msg": "Lost track of which result you flagged, try reloading the page."}
+        if not reason:
+            return {"ok": False, "stored": False, "msg": "Say a few words about why it's a bad match first."}
+
+        got_pct = best_sim(conn, card["oracle_id"], got["oracle_id"], picked)
+        conn.execute("""INSERT INTO feedback (kind, anchor_id, anchor_name, got_id, got_name,
+                                              got_pct, reason, picked_lines, filters, embed_model, ip)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                     (kind, card["oracle_id"], card["name"], got["oracle_id"], got["name"],
+                      got_pct, reason, "\n".join(picked), json.dumps(snap), model, ip))
+        return {"ok": True, "stored": True,
+                "msg": "Logged. " + got["name"] + " shows at " + str(got_pct) +
+                       "% right now, and reports like this become the test cases the matcher is graded against."}
+
+
+#---- the review side of the feedback loop ----
+
+def admin_allowed():
+    #no ADMIN_KEY in the environment means no admin pages anywhere, and a
+    #wrong key 404s instead of 403 so the page doesn't admit it exists
+    return ADMIN_KEY != "" and request.args.get("key", "") == ADMIN_KEY
+
+
+def report_markdown(r, line_texts, n):
+    #one accepted report in the shape the eval files use, ready to paste
+    #(the separators mirror those files exactly). missing reports become
+    #pairs.md entries: the anchor and the good card. misplaced reports
+    #become triplets.md negatives: the anchor, the bad card and the user's
+    #reason, with the Match line left to fill in by hand since users aren't
+    #asked to name one. the anchor quotes only the picked lines when the
+    #report came from a line-picked search
+    def q(lines):
+        if not lines:
+            return "`(card no longer in the database)`"
+        return " + ".join("`" + t + "`" for t in lines)
+
+    if r["picked_lines"]:
+        anchor_lines = r["picked_lines"].split("\n")
+    else:
+        anchor_lines = line_texts.get(r["anchor_id"], [])
+    day = r["created_at"].strftime("%Y-%m-%d")
+    out = str(n) + ".\n"
+    out += "    **Anchor:** " + r["anchor_name"] + " — " + q(anchor_lines) + "\n"
+    if r["kind"] == "misplaced":
+        out += "    **Match:** (fill in)\n"
+        out += "    **NOT:** " + (r["got_name"] or "?") + " — " + q(line_texts.get(r["got_id"], [])) + "\n"
+        out += "    *user report " + day + "; the flagged card showed at " + str(r["got_pct"]) + "%; reason: " + r["reason"] + "*\n"
+    else:
+        out += "    **Match:** " + (r["expected_name"] or "?") + " — " + q(line_texts.get(r["expected_id"], [])) + "\n"
+        note = "user report " + day + "; scored " + str(r["expected_pct"]) + "% against the cutoff"
+        if r["reason"]:
+            note += "; reason: " + r["reason"]
+        out += "    *" + note + "*\n"
+    return out
+
+
+@app.route("/admin")
+def admin():
+    if not admin_allowed():
+        abort(404)
+    with pool.connection() as conn:
+        rows = conn.execute("""SELECT * FROM feedback WHERE status IN ('pending', 'accepted')
+                               ORDER BY created_at DESC""").fetchall()
+        #one round trip for every card picture and line text the page shows
+        ids = set()
+        for r in rows:
+            ids.add(r["anchor_id"])
+            if r["expected_id"]:
+                ids.add(r["expected_id"])
+            if r["got_id"]:
+                ids.add(r["got_id"])
+        info = {}
+        line_texts = {}
+        if ids:
+            for c in conn.execute("SELECT oracle_id, name, image FROM cards WHERE oracle_id = ANY(%s)", (list(ids),)):
+                info[c["oracle_id"]] = c
+            for l in conn.execute("SELECT oracle_id, line_text FROM lines WHERE oracle_id = ANY(%s)", (list(ids),)):
+                line_texts.setdefault(l["oracle_id"], []).append(l["line_text"])
+
+    def card_bit(role, oid, name, pct):
+        c = info.get(oid)
+        return {"role": role, "name": name, "image": c["image"] if c else "", "pct": pct}
+
+    pending = []
+    accepted = []
+    triplet_md = []
+    pair_md = []
+    for r in rows:
+        cards = [card_bit("anchor (searched)", r["anchor_id"], r["anchor_name"], None)]
+        if r["expected_id"]:
+            cards.append(card_bit("should appear", r["expected_id"], r["expected_name"], r["expected_pct"]))
+        if r["got_id"]:
+            cards.append(card_bit("shouldn't be here", r["got_id"], r["got_name"], r["got_pct"]))
+        view = {
+            "id": r["id"], "kind": r["kind"], "cards": cards, "reason": r["reason"],
+            "created": r["created_at"].strftime("%Y-%m-%d %H:%M"),
+            "picked": r["picked_lines"].replace("\n", "  |  "),
+            "filters": r["filters"], "model": r["embed_model"], "ip": r["ip"],
+        }
+        if r["status"] == "pending":
+            pending.append(view)
+        else:
+            accepted.append(view)
+            if r["kind"] == "misplaced":
+                triplet_md.append(report_markdown(r, line_texts, len(triplet_md) + 1))
+            else:
+                pair_md.append(report_markdown(r, line_texts, len(pair_md) + 1))
+
+    return render_template("admin.html", key=ADMIN_KEY, pending=pending, accepted=accepted,
+                           triplet_md="\n".join(triplet_md), pair_md="\n".join(pair_md))
+
+
+@app.route("/admin/act", methods=["POST"])
+def admin_act():
+    if not admin_allowed():
+        abort(404)
+    try:
+        fid = int(request.form.get("id", ""))
+    except ValueError:
+        abort(400)
+    action = request.form.get("action", "")
+    #archived is where accepted reports go once they've been copied into the eval files
+    if action not in ("accepted", "rejected", "archived", "pending"):
+        abort(400)
+    with pool.connection() as conn:
+        conn.execute("UPDATE feedback SET status = %s WHERE id = %s", (action, fid))
+    return redirect("/admin?key=" + ADMIN_KEY)
 
 
 #the search bar calls this while you type to fill the suggestion dropdown.

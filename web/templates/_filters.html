@@ -1,0 +1,29 @@
+{# the shared filter controls, included inside a <form> by both /search and
+   /unique so the two pages can never drift apart. each page's form adds its
+   own extras around this (min match and sort on search, the uniqueness bar
+   on unique). state restores from request.args, which is simply empty on
+   pages that drive their filters from javascript instead of reloads #}
+<span class="filter-colors" title="color identity, results must fit inside what you pick">
+    <label class="ci-w"><input type="checkbox" name="colors" value="W" {% if 'W' in request.args.getlist('colors') %}checked{% endif %}>W</label>
+    <label class="ci-u"><input type="checkbox" name="colors" value="U" {% if 'U' in request.args.getlist('colors') %}checked{% endif %}>U</label>
+    <label class="ci-b"><input type="checkbox" name="colors" value="B" {% if 'B' in request.args.getlist('colors') %}checked{% endif %}>B</label>
+    <label class="ci-r"><input type="checkbox" name="colors" value="R" {% if 'R' in request.args.getlist('colors') %}checked{% endif %}>R</label>
+    <label class="ci-g"><input type="checkbox" name="colors" value="G" {% if 'G' in request.args.getlist('colors') %}checked{% endif %}>G</label>
+</span>
+<span class="filter-prices">
+    $ <input type="number" name="pmin" min="0" step="0.01" placeholder="min" value="{{ request.args.get('pmin', '') }}">
+    to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" value="{{ request.args.get('pmax', '') }}">
+</span>
+<span class="filter-prices" title="mana value (converted mana cost)">
+    MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" value="{{ request.args.get('mvmin', '') }}">
+    to <input type="number" name="mvmax" min="0" step="1" placeholder="max" value="{{ request.args.get('mvmax', '') }}">
+</span>
+<select name="type">
+    <option value="">Any type</option>
+    {% for t in types %}
+    <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+</select>
+<label title="legendary creatures, cards that can lead a deck"><input type="checkbox" name="cmdr" value="1" {% if request.args.get('cmdr') %}checked{% endif %}>commanders only</label>
+<label><input type="checkbox" name="gc" value="1" {% if request.args.get('gc') %}checked{% endif %}>hide game changers</label>
+<label title="cards that aren't legal in commander (banned etc) are hidden unless this is on"><input type="checkbox" name="illegal" value="1" {% if request.args.get('illegal') %}checked{% endif %}>include illegal</label>

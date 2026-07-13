@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>{% block title %}Delvefall{% endblock %}</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='DelvefallLogo.png') }}">
+        <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    </head>
+    <body class="{% block bodyclass %}{% endblock %}">
+
+        {# the home page swaps this whole strip out for its big centered
+           search, every other page gets the compact header bar #}
+        {% block header %}
+        <header>
+            <div class="header-inner">
+                <img class="logo" src="{{ url_for('static', filename='DelvefallLogo.png') }}" alt="Delvefall logo" width="50px" height="50px">
+                <a class="site-name" href="/">Delvefall</a>
+                <form action="/search" method="get" class="search-form" autocomplete="off">
+                    <input type="text" name="q" placeholder="Search for a card by name..." value="{{ query or '' }}" autofocus>
+                    <button type="submit">Search</button>
+                    <div id="suggestions"></div>
+                </form>
+                <nav class="header-links">
+                    <a href="/unique">Unique cards</a>
+                </nav>
+            </div>
+        </header>
+        {% endblock %}
+
+        <main>
+            {% block content %}{% endblock %}
+        </main>
+
+        <footer>
+            <p>Card data and images from <a href="https://scryfall.com">Scryfall</a>.
+            Unofficial Fan Content, not approved or endorsed by Wizards of the Coast.</p>
+        </footer>
+
+        <script>
+        /*
+            autocomplete for the search bar. waits a moment after each keypress then
+            asks the server for card names matching what's typed so far, so you can
+            find a card even if you only half remember the name. every page has
+            exactly one .search-form (the header's, or the big one on home)
+        */
+        var searchInput = document.querySelector(".search-form input");
+        var suggestBox = document.getElementById("suggestions");
+        var typingTimer;
+
+        searchInput.addEventListener("input", function() {
+            clearTimeout(typingTimer);
+            var q = searchInput.value.trim();
+            if (q.length < 2) {
+                suggestBox.style.display = "none";
+                return;
+            }
+            //small delay so we dont spam the server on every single keypress
+            typingTimer = setTimeout(function() {
+                fetch("/suggest?q=" + encodeURIComponent(q))
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        suggestBox.innerHTML = "";
+                        if (data.names.length == 0) {
+                            suggestBox.style.display = "none";
+                            return;
+                        }
+                        data.names.forEach(function(name) {
+                            var div = document.createElement("div");
+                            div.className = "suggestion";
+                            div.textContent = name;
+                            div.onclick = function() {
+                                searchInput.value = name;
+                                suggestBox.style.display = "none";
+                                document.querySelector(".search-form").submit();
+                            };
+                            suggestBox.appendChild(div);
+                        });
+                        suggestBox.style.display = "block";
+                    });
+            }, 150);
+        });
+
+        //clicking anywhere outside the search bar closes the dropdown
+        document.addEventListener("click", function(e) {
+            if (!e.target.closest(".search-form")) {
+                suggestBox.style.display = "none";
+            }
+        });
+        </script>
+
+        {# the shared rotate / flip / transform overlay for card pictures.
+           it wires every .card-frame on the page after load, and pages that
+           add cards later (load more, the unique dealer) call
+           enhanceCardFrames themselves #}
+        <script src="{{ url_for('static', filename='cards.js') }}"></script>
+
+        {% block scripts %}{% endblock %}
+
+    </body>
+</html>

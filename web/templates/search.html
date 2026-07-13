@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}{% if card %}{{ card.name }} - Delvefall{% else %}Delvefall{% endif %}{% endblock %}
+
+{% block content %}
+    {% if not_found %}
+        <p class="message">Couldn't find a card called "{{ query }}", maybe check the spelling?</p>
+    {% elif card %}
+        <div class="searched-card">
+            <div class="card-frame{% if card.sideways %} sideways{% endif %}" data-sideways="{{ '1' if card.sideways else '' }}" data-flip="{{ '1' if card.flip else '' }}" data-back="{{ card.image_back }}">
+                <img src="{{ card.image }}" alt="{{ card.name }}">
+            </div>
+            <div class="searched-info">
+                <h1>{{ card.name }} <span class="mana">{{ card.mana_cost }}</span></h1>
+                <p class="type-line">{{ card.type_line }}</p>
+                <div class="oracle">
+                    {% for line in card_lines %}
+                    {% if line.searchable %}
+                    <div class="oracle-line{% if line.selected %} picked{% endif %}" data-idx="{{ line.idx }}">{{ line.text }}</div>
+                    {% else %}
+                    <div class="oracle-plain">{{ line.text }}</div>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+                <p class="line-hint">
+                    {% if picked_count %}
+                    searching only the highlighted lines, click a line to pick or unpick it
+                    {% else %}
+                    click a line to search just that ability, click more to combine them
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+
+        <form class="filter-bar" action="/search" method="get">
+            <input type="hidden" name="q" value="{{ query }}">
+            {% if request.args.get('lines') %}
+            <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
+            {% endif %}
+            {% include "_filters.html" %}
+            <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
+            <select name="sort">
+                <option value="best">Best match</option>
+                <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
+                <option value="pricey" {% if request.args.get('sort') == 'pricey' %}selected{% endif %}>Price: high to low</option>
+            </select>
+            <button type="submit">Apply</button>
+        </form>
+
+        <h2>Cards that do something similar
+            <a href="#" id="report-missing" class="report-open">expected a card that isn't here?</a></h2>
+
+        {# the report bar. hidden until one of the two entry points opens it:
+           the "expected a card" link above (a missing report, which asks for
+           the card's name) or a flag on a result card (a misplaced report,
+           which just asks why in the user's own words). it posts to /feedback
+           with the page's whole query string so the server judges the report
+           against exactly what the user was looking at #}
+        <div id="report-bar" hidden>
+            <p id="report-title"></p>
+            <div class="report-controls">
+                <span class="report-pick" id="report-pick">
+                    <input id="report-input" type="text" placeholder="type a card name..." autocomplete="off">
+                    <div id="report-suggest"></div>
+                </span>
+                <textarea id="report-reason" rows="2"></textarea>
+                <button id="report-send">Send report</button>
+                <button id="report-cancel">Cancel</button>
+            </div>
+            <p class="report-why">Reports become test cases the matcher is graded against before an update ships.
+                Delvefall isn't a chatbot guessing, it compares the printed rules text of every card with plain math,
+                and examples like yours decide which differences should count.</p>
+            <p id="report-msg" hidden></p>
+        </div>
+
+        {% if not results %}
+        <p class="message">Nothing matched with the current filters{% if min_pct > 0 %} at {{ min_pct }}%+ match{% endif %}. Try loosening them.</p>
+        {% endif %}
+        <div class="card-grid">
+            {% for r in results %}
+            <div class="result">
+                <div class="card-frame{% if r.sideways %} sideways{% endif %}" data-sideways="{{ '1' if r.sideways else '' }}" data-flip="{{ '1' if r.flip else '' }}" data-back="{{ r.image_back }}">
+                    <a href="{{ r.scryfall_uri }}" target="_blank">
+                        <img src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">
+                    </a>
+                </div>
+                <div class="result-name">{{ r.name }} <span class="percent">{{ r.percent }}%</span></div>
+                {% if r.price %}<div class="result-price">{{ r.price }}</div>{% endif %}
+                <div class="match-line" title="matches your card's line: {{ r.our_line }}">"{{ r.their_line }}"</div>
+                {% if r.more_count %}
+                <div class="more-lines" title="{{ r.more_text }}">+{{ r.more_count }} more matching {% if r.more_count == 1 %}line{% else %}lines{% endif %}</div>
+                {% endif %}
+                <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="report this as a bad match">shouldn't be here?</button>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if has_more or weak_count %}
+        <div class="load-more-wrap">
+            <button id="load-more" data-min="{{ min_pct }}" {% if not has_more %}data-tier="weak"{% endif %}>
+                {%- if has_more %}Load 20 more{% else %}Show {{ weak_count }} weaker matches (below {{ min_pct }}%){% endif -%}
+            </button>
+        </div>
+        {% endif %}
+    {% endif %}
+{% endblock %}
+
+{% block scripts %}
+    {% if card %}
+    <script>
+    /*
+        the load more button. asks the server for the next 20 results as
+        json and glues them onto the bottom of the grid. the page's whole
+        query string (search, filters, picked lines, sort) rides along so
+        page two obeys the same rules as page one.
+
+        the same button handles both tiers: it pages through the strong
+        matches first, then relabels itself to "show weaker matches" and
+        keeps paging through the cards under the minimum match line, with
+        a divider in the grid so the boundary is obvious. that way nobody
+        ever hits a dead end or has to scroll back up to loosen things
+    */
+    var offset = 20;
+    var btn = document.getElementById("load-more");
+    if (btn) {
+        //if the page opened with no strong matches left, the button is
+        //already pointed at the weak tier and starts from the top of it
+        if (btn.dataset.tier == "weak") {
+            offset = 0;
+        }
+        btn.onclick = function() {
+            var weakTier = btn.dataset.tier == "weak";
+            btn.textContent = "Loading...";
+            var params = new URLSearchParams(window.location.search);
+            params.set("offset", offset);
+            if (weakTier) {
+                params.set("weak", "1");
+            }
+            fetch("/more?" + params.toString())
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var grid = document.querySelector(".card-grid");
+                    //the first weak batch gets a divider so the quality drop is labeled
+                    if (weakTier && offset == 0 && data.results.length) {
+                        var divider = document.createElement("div");
+                        divider.className = "weak-divider";
+                        divider.textContent = "matches below " + btn.dataset.min + "% from here";
+                        grid.appendChild(divider);
+                    }
+                    data.results.forEach(function(r) {
+                        var div = document.createElement("div");
+                        div.className = "result";
+                        var html = '<div class="card-frame' + (r.sideways ? ' sideways' : '') + '"' +
+                            ' data-sideways="' + (r.sideways ? '1' : '') + '"' +
+                            ' data-flip="' + (r.flip ? '1' : '') + '"' +
+                            ' data-back="' + r.image_back + '">' +
+                            '<a href="' + r.scryfall_uri + '" target="_blank">' +
+                            '<img src="' + r.image + '" alt="" loading="lazy"></a></div>' +
+                            '<div class="result-name">' + r.name + ' <span class="percent">' + r.percent + '%</span></div>';
+                        if (r.price) {
+                            html += '<div class="result-price">' + r.price + '</div>';
+                        }
+                        html += '<div class="match-line">"' + r.their_line + '"</div>';
+                        if (r.more_count) {
+                            html += '<div class="more-lines">+' + r.more_count + ' more matching ' + (r.more_count == 1 ? "line" : "lines") + '</div>';
+                        }
+                        div.innerHTML = html;
+                        /*
+                            the tooltips get set as properties instead of going in the
+                            html string, the line text is full of quote characters that
+                            would break out of an attribute
+                        */
+                        div.querySelector(".match-line").title = "matches your card's line: " + r.our_line;
+                        if (r.more_count) {
+                            div.querySelector(".more-lines").title = r.more_text;
+                        }
+                        /*
+                            the report flag is built as an element for the same
+                            reason as the tooltips: card names can hold quote
+                            characters that would break out of an attribute
+                        */
+                        var flag = document.createElement("button");
+                        flag.className = "report-flag";
+                        flag.textContent = "shouldn't be here?";
+                        flag.title = "report this as a bad match";
+                        flag.dataset.id = r.oracle_id;
+                        flag.dataset.name = r.name;
+                        div.appendChild(flag);
+                        grid.appendChild(div);
+                    });
+                    //the fresh frames need their rotate/flip/transform buttons
+                    enhanceCardFrames(grid);
+                    offset = offset + data.results.length;
+                    btn.textContent = "Load 20 more";
+                    if (!data.has_more) {
+                        if (!weakTier && data.weak_count > 0) {
+                            //strong matches are done, repoint the button at the weak tier
+                            btn.dataset.tier = "weak";
+                            offset = 0;
+                            btn.textContent = "Show " + data.weak_count + " weaker matches (below " + btn.dataset.min + "%)";
+                        } else {
+                            //truly nothing left, no point keeping the button around
+                            btn.remove();
+                        }
+                    }
+                });
+        };
+    }
+
+    /*
+        the line picker. clicking a rules line toggles its index in the
+        lines url param and reloads, so the search only uses the picked
+        lines and the url stays shareable
+    */
+    document.querySelectorAll(".oracle-line").forEach(function(el) {
+        el.onclick = function() {
+            var params = new URLSearchParams(window.location.search);
+            var picked = [];
+            if (params.get("lines")) {
+                picked = params.get("lines").split(",");
+            }
+            var i = picked.indexOf(el.dataset.idx);
+            if (i == -1) {
+                picked.push(el.dataset.idx);
+            } else {
+                picked.splice(i, 1);
+            }
+            if (picked.length) {
+                params.set("lines", picked.join(","));
+            } else {
+                params.delete("lines");
+            }
+            window.location.search = params.toString();
+        };
+    });
+
+    /*
+        the report bar. two ways in: the "expected a card that isn't here?"
+        link opens it as a missing-card report (name the card, plus anything
+        extra you want to add), and the little flag under any result opens it
+        as a misplaced-card report with that card marked in red (just say why
+        it's a bad match, nobody has to know a better card off the top of
+        their head). the server answers with a human sentence either way,
+        including "your filters are hiding that card, here's which one" for
+        missing reports that aren't really the matcher's fault
+    */
+    var reportBar = document.getElementById("report-bar");
+    var reportTitle = document.getElementById("report-title");
+    var reportPick = document.getElementById("report-pick");
+    var reportInput = document.getElementById("report-input");
+    var reportReason = document.getElementById("report-reason");
+    var reportMsg = document.getElementById("report-msg");
+    var reportSuggest = document.getElementById("report-suggest");
+    var reportKind = "";
+    var flagged = null;  //{id, name, el} of the card a misplaced report is about
+
+    function openReportBar(kind, flag) {
+        if (flagged) {
+            flagged.el.classList.remove("flagged");
+        }
+        reportKind = kind;
+        flagged = flag || null;
+        if (flagged) {
+            flagged.el.classList.add("flagged");
+            reportTitle.textContent = 'You flagged "' + flagged.name + '" as a bad match. Say a few words about why.';
+            reportReason.placeholder = "why is it a bad match?";
+        } else {
+            reportTitle.textContent = "Which card did you expect to see? It gets checked against your filters and the matcher, and real gaps are logged.";
+            reportReason.placeholder = "(optional) anything else worth knowing?";
+        }
+        //missing reports name a card, misplaced ones only explain
+        reportPick.hidden = (kind == "misplaced");
+        reportBar.hidden = false;
+        reportMsg.hidden = true;
+        reportInput.value = "";
+        reportReason.value = "";
+        reportBar.scrollIntoView({behavior: "smooth", block: "nearest"});
+        if (kind == "misplaced") {
+            reportReason.focus();
+        } else {
+            reportInput.focus();
+        }
+    }
+
+    function closeReportBar() {
+        if (flagged) {
+            flagged.el.classList.remove("flagged");
+        }
+        flagged = null;
+        reportKind = "";
+        reportBar.hidden = true;
+        reportSuggest.style.display = "none";
+    }
+
+    function showReportMsg(text, good) {
+        reportMsg.textContent = text;
+        reportMsg.className = good ? "good" : "bad";
+        reportMsg.hidden = false;
+    }
+
+    document.getElementById("report-missing").onclick = function(e) {
+        e.preventDefault();
+        openReportBar("missing", null);
+    };
+
+    document.getElementById("report-cancel").onclick = closeReportBar;
+
+    /*
+        one listener on the grid covers every flag, including the ones load
+        more adds later
+    */
+    document.querySelector(".card-grid").addEventListener("click", function(e) {
+        var flagBtn = e.target.closest(".report-flag");
+        if (flagBtn) {
+            openReportBar("misplaced", {id: flagBtn.dataset.id, name: flagBtn.dataset.name, el: flagBtn.closest(".result")});
+        }
+    });
+
+    //the same delayed name suggestions as the search bar, in miniature
+    var reportTimer;
+    reportInput.addEventListener("input", function() {
+        clearTimeout(reportTimer);
+        var q = reportInput.value.trim();
+        if (q.length < 2) {
+            reportSuggest.style.display = "none";
+            return;
+        }
+        reportTimer = setTimeout(function() {
+            fetch("/suggest?q=" + encodeURIComponent(q))
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    reportSuggest.innerHTML = "";
+                    if (data.names.length == 0) {
+                        reportSuggest.style.display = "none";
+                        return;
+                    }
+                    data.names.forEach(function(name) {
+                        var div = document.createElement("div");
+                        div.className = "suggestion";
+                        div.textContent = name;
+                        div.onclick = function() {
+                            reportInput.value = name;
+                            reportSuggest.style.display = "none";
+                        };
+                        reportSuggest.appendChild(div);
+                    });
+                    reportSuggest.style.display = "block";
+                });
+        }, 150);
+    });
+
+    document.addEventListener("click", function(e) {
+        if (!e.target.closest(".report-pick")) {
+            reportSuggest.style.display = "none";
+        }
+    });
+
+    document.getElementById("report-send").onclick = function() {
+        var body = {kind: reportKind, reason: reportReason.value.trim()};
+        if (reportKind == "misplaced") {
+            if (!body.reason) {
+                showReportMsg("Say a few words about why it's a bad match first.", false);
+                return;
+            }
+            body.got_id = flagged.id;
+        } else {
+            body.expected = reportInput.value.trim();
+            if (!body.expected) {
+                showReportMsg("Type a card name first.", false);
+                return;
+            }
+        }
+        //the page's whole query string rides along, like the load more button
+        fetch("/feedback?" + new URLSearchParams(window.location.search).toString(), {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(body)
+        })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { showReportMsg(data.msg, data.ok); })
+            .catch(function() { showReportMsg("Something went wrong sending that, sorry.", false); });
+    };
+
+    /*
+        remember this search so the home page can float it as a recent card.
+        the canonical name goes in (whatever find_card landed on), not the
+        typo the user actually typed, so clicking it later hits exact match
+    */
+    var recent = [];
+    try {
+        recent = JSON.parse(localStorage.getItem("recent_searches") || "[]");
+    } catch (e) {}
+    var cardName = {{ card.name | tojson }};
+    recent = recent.filter(function(n) { return n != cardName; });
+    recent.unshift(cardName);
+    localStorage.setItem("recent_searches", JSON.stringify(recent.slice(0, 8)));
+    </script>
+    {% endif %}
+{% endblock %}
