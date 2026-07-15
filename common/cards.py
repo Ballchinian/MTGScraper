@@ -91,11 +91,18 @@ def keep_card(card):
 
 def split_lines(card):
     #each line of rules text is basically one ability, so embed every line
-    #separately instead of whole cards. that way one matching ability is enough
+    #separately instead of whole cards. that way one matching ability is
+    #enough. every line remembers which face printed it (0 front, 1 back),
+    #so a match that lives on the back face can show that side of the card
+    if card.get("oracle_text"):
+        chunks = [(card["oracle_text"], 0)]
+    else:
+        chunks = [(f.get("oracle_text", ""), i) for i, f in enumerate(card.get("card_faces", []))]
     out = []
-    for line in get_text(card).split("\n"):
-        cleaned = clean_line(line, card["name"])
-        if len(cleaned) < 3:
-            continue
-        out.append(cleaned)
+    for text, face in chunks:
+        for line in text.split("\n"):
+            cleaned = clean_line(line, card["name"])
+            if len(cleaned) < 3:
+                continue
+            out.append((cleaned, min(face, 1)))
     return out

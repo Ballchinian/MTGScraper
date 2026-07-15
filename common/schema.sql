@@ -77,10 +77,25 @@ CREATE TABLE IF NOT EXISTS lines (
     oracle_id uuid NOT NULL REFERENCES cards(oracle_id) ON DELETE CASCADE,
     line_text text NOT NULL,
     embedding vector(768) NOT NULL,
-    nn_sim    real
+    nn_sim    real,
+    face      smallint NOT NULL DEFAULT 0
 );
 
 ALTER TABLE lines ADD COLUMN IF NOT EXISTS nn_sim real;
+
+--which face printed the line, 0 front / 1 back. when the winning match
+--lives on a card's back face the results page shows that side first, so
+--the line under the picture is on the picture (the ulvenwald lesson: the
+--back face really does print "{T}: Add {C}{C}.", the display just hid it)
+ALTER TABLE lines ADD COLUMN IF NOT EXISTS face smallint NOT NULL DEFAULT 0;
+
+--whole-card rows: one extra row per multi-line card holding its entire
+--cleaned text, for the line-merging blind spot (two separate lines that
+--together equal another card's compound line - shadrix vs gluntch). they
+--are retrieval material for a future card-level scorer and stay OUT of
+--everything line-shaped: uniqueness, line_stats, the per-line search and
+--the training miner all filter on NOT whole
+ALTER TABLE lines ADD COLUMN IF NOT EXISTS whole boolean NOT NULL DEFAULT false;
 
 --lets us grab one card's lines instantly at search time
 CREATE INDEX IF NOT EXISTS lines_oracle_id ON lines (oracle_id);

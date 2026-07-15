@@ -101,7 +101,7 @@ def recompute_uniqueness(conn):
     ids = []
     owners = []      #row i belongs to card owners[i]
     vecs = []
-    for lid, oid, vec in conn.execute("SELECT id, oracle_id, embedding FROM lines"):
+    for lid, oid, vec in conn.execute("SELECT id, oracle_id, embedding FROM lines WHERE NOT whole"):
         ids.append(lid)
         owners.append(oid)
         #pgvector hands back its own Vector class, not a numpy array
@@ -199,7 +199,7 @@ def main():
         #the bulk file might be old news while the uniqueness scores arent:
         #the first run after the /unique feature shipped, or a recompute that
         #died halfway. any line without a score means theres finishing to do
-        if conn.execute("SELECT 1 FROM lines WHERE nn_sim IS NULL LIMIT 1").fetchone():
+        if conn.execute("SELECT 1 FROM lines WHERE nn_sim IS NULL AND NOT whole LIMIT 1").fetchone():
             recompute_uniqueness(conn)
         else:
             print("already processed the bulk file from " + updated_at + ", nothing to do")
@@ -301,10 +301,23 @@ def main():
         #collect every line from every new or changed card so the model runs
         #once over one big batch instead of once per card
         texts = []
+        faces = []
+        wholes = []
         owners = []  #texts[i] belongs to work[owners[i]]
         for i, (c, h) in enumerate(work):
-            for line in split_lines(c):
+            card_lines = split_lines(c)
+            for line, face in card_lines:
                 texts.append(line)
+                faces.append(face)
+                wholes.append(False)
+                owners.append(i)
+            #multi-line cards also get one whole-card row (all their cleaned
+            #lines together), retrieval material for the line-merging blind
+            #spot. single-line cards would just duplicate their line
+            if len(card_lines) > 1:
+                texts.append("\n".join(line for line, face in card_lines))
+                faces.append(0)
+                wholes.append(True)
                 owners.append(i)
 
         #imported down here so the nothing-changed runs never pay the slow
@@ -338,9 +351,9 @@ def main():
             rows = []
             for j, text in enumerate(texts):
                 c = work[owners[j]][0]
-                rows.append((c["oracle_id"], text, embs[j]))
+                rows.append((c["oracle_id"], text, embs[j], faces[j], wholes[j]))
             print("writing " + str(len(rows)) + " lines...")
-            cur.executemany("INSERT INTO lines (oracle_id, line_text, embedding) VALUES (%s, %s, %s)", rows)
+            cur.executemany("INSERT INTO lines (oracle_id, line_text, embedding, face, whole) VALUES (%s, %s, %s, %s, %s)", rows)
 
     #deleting a card cascades to its lines, so this cleans up everything
     if stale:
@@ -356,7 +369,7 @@ def main():
         #way easier than trying to patch the counts incrementally
         print("recounting how common every line is...")
         conn.execute("TRUNCATE line_stats")
-        conn.execute("INSERT INTO line_stats SELECT line_text, count(*) FROM lines GROUP BY line_text")
+        conn.execute("INSERT INTO line_stats SELECT line_text, count(*) FROM lines WHERE NOT whole GROUP BY line_text")
 
     #remember which bulk file this was so tomorrow's run can skip it, and
     #which model made the vectors so the next swap rebuilds automatically
@@ -375,7 +388,7 @@ def main():
     #check at the gate finishes the job on the next run. the NULL check here
     #catches databases from before the /unique feature even on days when no
     #cards changed
-    if work or stale or conn.execute("SELECT 1 FROM lines WHERE nn_sim IS NULL LIMIT 1").fetchone():
+    if work or stale or conn.execute("SELECT 1 FROM lines WHERE nn_sim IS NULL AND NOT whole LIMIT 1").fetchone():
         recompute_uniqueness(conn)
 
     conn.close()

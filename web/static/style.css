@@ -278,6 +278,18 @@ h2 {
     accent-color: #7857a5;
 }
 
+/* the "min match relaxed while blending" note under the filter bar */
+.min-note {
+    font-size: 12.5px;
+    color: #6c6874;
+    margin: 6px 0 0;
+}
+
+.min-note button {
+    font-size: 12px;
+    cursor: pointer;
+}
+
 /* a pure concept match's badge: same purple family as the percent, but
    hollow-feeling so the two kinds of number read differently at a glance */
 .percent.concept {

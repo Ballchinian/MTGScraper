@@ -244,19 +244,20 @@ def read_number(s):
         return None
 
 
-def read_min():
-    #minimum match percent, in calibrated display units. 80 by default: the
-    #map pins the model's real quality boundary to 80, so this keeps exactly
-    #the set of cards the old raw-90 cutoff kept - the number just finally
-    #means what it says, on both axes. under a price sort the percent is the
-    #only quality gate left, so cheap half matches sorting to the top makes
-    #the site look broken. everything below the line still exists, it just
-    #pages in after the "show weaker matches" button instead of being thrown
-    #away
+def read_min(blend=0):
+    #minimum match percent, in calibrated display units. 80 by default at
+    #pure mechanics: the map pins the model's real quality boundary there,
+    #same set of cards the old raw-90 cutoff kept. a blended badge is an
+    #average of two axes though, and averages rarely reach 80, so the
+    #DEFAULT relaxes to 70 while the slider is away from mechanics - only
+    #the default: an explicit min in the url always wins, and the page shows
+    #a note with a keep-it-at-80 button whenever the relaxed one applied.
+    #everything below the line still exists either way, it just pages in
+    #behind the "show weaker matches" button instead of being thrown away
     try:
-        m = int(request.args.get("min", 80))
+        m = int(request.args.get("min", ""))
     except ValueError:
-        m = 80
+        m = 80 if blend == 0 else 70
     return max(0, min(m, 100))
 
 
@@ -364,7 +365,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         qlines = conn.execute("""
             SELECT l.line_text, l.embedding, coalesce(s.count, 1) AS count
             FROM lines l LEFT JOIN line_stats s ON s.line_text = l.line_text
-            WHERE l.oracle_id = %s
+            WHERE l.oracle_id = %s AND NOT l.whole
         """, (oracle_id,)).fetchall()
 
         #if the user picked lines on the page, only search with those
@@ -381,16 +382,16 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             #<=> is pgvector's cosine distance, so similarity is 1 minus it.
             #grab way more than we need since a bunch will get merged per card
             matches = conn.execute("""
-                SELECT l.oracle_id, l.line_text, 1 - (l.embedding <=> %s) AS sim, c.price_usd
+                SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, c.price_usd
                 FROM lines l JOIN cards c ON c.oracle_id = l.oracle_id
-                WHERE l.oracle_id <> %s""" + where + """
+                WHERE l.oracle_id <> %s AND NOT l.whole""" + where + """
                 ORDER BY l.embedding <=> %s
                 LIMIT 400
             """, [ql["embedding"], oracle_id] + fparams + [ql["embedding"]]).fetchall()
             for m in matches:
                 if m["oracle_id"] not in pairs_by_card:
                     pairs_by_card[m["oracle_id"]] = []
-                pairs_by_card[m["oracle_id"]].append((m["sim"] * w, m["sim"], ql["line_text"], m["line_text"]))
+                pairs_by_card[m["oracle_id"]].append((m["sim"] * w, m["sim"], ql["line_text"], m["line_text"], m["face"]))
                 prices[m["oracle_id"]] = m["price_usd"]
 
         #sort each card's pairs so pairs[0] is its best one, then rank the
@@ -401,25 +402,15 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             ranked.append((oid, pairs))
         ranked.sort(key=lambda x: x[1][0][0], reverse=True)
 
-        #split at the minimum match line. the percent a card shows is its best
-        #pair's calibrated similarity, so that's what decides which side it
-        #lands on
-        strong = []
-        weak_tier = []
-        for entry in ranked:
-            if mech_display(entry[1][0][1]) >= min_pct:
-                strong.append(entry)
-            else:
-                weak_tier.append(entry)
-
-        #the concepts side of the slider. two rules keep it honest: a card
-        #shows if it passes EITHER axis's own gate (a concept match can join
-        #the strong tier, never sneak past its own bar), and the blend only
-        #decides ORDER - every displayed number stays what its own axis says
+        #the concepts side of the slider. one promise keeps it honest: the
+        #badge is (1-w) * mech + w * concept, and the min-match line cuts on
+        #that SAME number, so nothing under the cutoff ever shows above the
+        #fold no matter which axis it leaned on
         concept_raw = {}
         if blend > 0:
-            #every card sharing a tag with the anchor that clears the
-            #concept gate, through the same filters as everything else
+            #cards the lines never found, injected as candidates when their
+            #concept score alone is worth considering at the current cutoff,
+            #through the same filters as everything else
             rows = conn.execute("""
                 WITH anchor AS (
                     SELECT ct.tag, t.idf FROM card_tags ct
@@ -438,16 +429,15 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                 HAVING sum(a.idf * a.idf) / (na.norm * nc.norm) >= %s
                 ORDER BY raw DESC
                 LIMIT 300
-            """, [oracle_id, oracle_id, oracle_id] + fparams + [concept_raw_gate(MIN_CONCEPT)]).fetchall()
-            gated = {}
+            """, [oracle_id, oracle_id, oracle_id] + fparams + [concept_raw_gate(min_pct)]).fetchall()
             for r in rows:
-                gated[r["oracle_id"]] = r["raw"]
+                concept_raw[r["oracle_id"]] = r["raw"]
                 prices.setdefault(r["oracle_id"], r["price_usd"])
 
-            #the mechanical results need their concept scores too (below the
-            #gate is fine here, they already earned their spot), so the blend
-            #can weigh every card on both axes
-            ids = [oid for oid, pairs in strong if oid not in gated]
+            #every mechanical candidate needs its concept score too, the
+            #blend weighs both axes for everyone
+            have = {oid for oid, pairs in ranked}
+            ids = [oid for oid in have if oid not in concept_raw]
             if ids:
                 for r in conn.execute("""
                     WITH anchor AS (
@@ -465,32 +455,32 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                     GROUP BY ct.oracle_id, na.norm, nc.norm
                 """, (oracle_id, oracle_id, ids)).fetchall():
                     concept_raw[r["oracle_id"]] = r["raw"]
-            concept_raw.update(gated)
 
-            #concept-gated cards join the strong tier: out of the weak tier
-            #if they were there, from nowhere if the lines never matched at
-            #all (those carry no pairs and show their concept score instead)
-            have = {oid for oid, pairs in strong}
-            still_weak = []
-            for oid, pairs in weak_tier:
-                if oid in gated and oid not in have:
-                    strong.append((oid, pairs))
-                    have.add(oid)
-                else:
-                    still_weak.append((oid, pairs))
-            weak_tier = still_weak
-            for oid in gated:
+            #pure concept finds carry no line pairs, their badge is w * concept
+            for oid in concept_raw:
                 if oid not in have:
-                    strong.append((oid, []))
+                    ranked.append((oid, []))
 
             def blended(entry):
                 oid, pairs = entry
                 mech = mech_display(pairs[0][1]) if pairs else 0
                 return (1 - blend) * mech + blend * concept_display(concept_raw.get(oid, 0.0))
-            strong.sort(key=blended, reverse=True)
-            #the weak tier gets the same lens, so its numbers read in order too
-            weak_tier.sort(key=blended, reverse=True)
+            ranked.sort(key=blended, reverse=True)
+            gate_score = blended
+        else:
+            def gate_score(entry):
+                return mech_display(entry[1][0][1])
 
+        #split at the minimum match line. the number that decides which side
+        #a card lands on is exactly the number its badge will show (rounded
+        #the same way, so a 79.6 that badges as 80 passes)
+        strong = []
+        weak_tier = []
+        for entry in ranked:
+            if round(gate_score(entry)) >= min_pct:
+                strong.append(entry)
+            else:
+                weak_tier.append(entry)
         weak_count = len(weak_tier)
         if weak:
             wanted = weak_tier
@@ -544,7 +534,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         concept_pct = concept_display(concept_raw[oid]) if oid in concept_raw else 0
         more = []
         if pairs:
-            score, sim, our_line, their_line = pairs[0]
+            score, sim, our_line, their_line, their_face = pairs[0]
             mech_pct = mech_display(sim)
             concept_only = False
             #the extra pairs behind the "+n more matching lines" hint. pairs that
@@ -562,6 +552,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             #a pure concept match: no line of rules text got it here
             our_line = ""
             their_line = ""
+            their_face = 0
             mech_pct = 0
             concept_only = True
         #the badge answers "how good a match, given where the slider is":
@@ -576,13 +567,22 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         price = ""
         if c["price_usd"] is not None:
             price = "$" + str(c["price_usd"])
+        #a match that lives on the back face shows that side first, so the
+        #line printed under the card is on the picture the user is looking
+        #at (the ulvenwald lesson). the front face keeps the flip button
+        image = c["image"]
+        image_back = c["image_back"] or ""
+        matched_back = their_face == 1 and bool(image_back)
+        if matched_back:
+            image, image_back = image_back, image
         results.append({
             "oracle_id": str(oid),  #the report flag needs to say which card it's flagging
             "name": c["name"],
             "mana_cost": c["mana_cost"],
             "type_line": c["type_line"],
-            "image": c["image"],
-            "image_back": c["image_back"] or "",
+            "image": image,
+            "image_back": image_back,
+            "matched_back": matched_back,
             "sideways": sideways(c["layout"], c["type_line"]),
             "flip": c["layout"] == "flip",
             "scryfall_uri": c["scryfall_uri"],
@@ -628,16 +628,20 @@ def search():
     card["flip"] = card["layout"] == "flip"
 
     filters = read_filters()
-    min_pct = read_min()
-    sort = read_sort()
     blend = read_blend()
+    min_pct = read_min(blend)
+    #the note with the keep-my-min button only shows when the relaxed
+    #default actually kicked in, never over a min the user chose
+    min_auto = blend > 0 and request.args.get("min") is None
+    sort = read_sort()
     card_lines, picked = build_lines(card, read_picked())
 
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, min_pct, sort,
                                                  blend=BLEND_WEIGHTS[blend])
     return render_template("search.html", query=query, card=card, card_lines=card_lines,
                            picked_count=len(picked), results=results, has_more=has_more,
-                           weak_count=weak_count, min_pct=min_pct, blend=blend, types=CARD_TYPES)
+                           weak_count=weak_count, min_pct=min_pct, min_auto=min_auto,
+                           blend=blend, types=CARD_TYPES)
 
 
 def read_unique():
@@ -749,8 +753,9 @@ def more():
         return {"results": [], "has_more": False, "weak_count": 0}
     card_lines, picked = build_lines(card, read_picked())
     weak = request.args.get("weak") == "1"
-    results, has_more, weak_count = find_similar(card["oracle_id"], picked, read_filters(), read_min(), read_sort(), offset,
-                                                 weak=weak, blend=BLEND_WEIGHTS[read_blend()])
+    blend = read_blend()
+    results, has_more, weak_count = find_similar(card["oracle_id"], picked, read_filters(), read_min(blend), read_sort(), offset,
+                                                 weak=weak, blend=BLEND_WEIGHTS[blend])
     return {"results": results, "has_more": has_more, "weak_count": weak_count}
 
 
@@ -776,9 +781,9 @@ def best_sim(conn, anchor_id, other_id, picked):
         SELECT 1 - (a.embedding <=> b.embedding) AS sim,
                coalesce(s.count, 1) AS count
         FROM lines a
-        JOIN lines b ON b.oracle_id = %s
+        JOIN lines b ON b.oracle_id = %s AND NOT b.whole
         LEFT JOIN line_stats s ON s.line_text = a.line_text
-        WHERE a.oracle_id = %s
+        WHERE a.oracle_id = %s AND NOT a.whole
     """
     params = [other_id, anchor_id]
     if picked:
@@ -854,7 +859,8 @@ def feedback():
     reason = str(body.get("reason", "")).strip()[:500]
 
     filters = read_filters()
-    min_pct = read_min()
+    blend = read_blend()
+    min_pct = read_min(blend)
     _, picked = build_lines(card, read_picked())
 
     with pool.connection() as conn:
@@ -873,7 +879,6 @@ def feedback():
         snap["sort"] = read_sort()
         #the slider position changes what the numbers the user saw MEANT
         #(blended past detent 0), so it rides in the snapshot too
-        blend = read_blend()
         snap["blend"] = blend
         #scale marker: reports from before 2026-07-15 stored raw-cosine
         #percents, everything after stores calibrated display percents
@@ -1022,7 +1027,7 @@ def admin():
         if ids:
             for c in conn.execute("SELECT oracle_id, name, image FROM cards WHERE oracle_id = ANY(%s)", (list(ids),)):
                 info[c["oracle_id"]] = c
-            for l in conn.execute("SELECT oracle_id, line_text FROM lines WHERE oracle_id = ANY(%s)", (list(ids),)):
+            for l in conn.execute("SELECT oracle_id, line_text FROM lines WHERE oracle_id = ANY(%s) AND NOT whole", (list(ids),)):
                 line_texts.setdefault(l["oracle_id"], []).append(l["line_text"])
 
     def card_bit(role, oid, name, pct):

@@ -47,6 +47,12 @@
             </select>
             <button type="submit">Apply</button>
         </form>
+        {% if min_auto %}
+        {# only shows when the relaxed default kicked in, never over a min the
+           user chose. the button pins 80 for the whole browser session #}
+        <p class="min-note">min match relaxed to {{ min_pct }}% while blending — blended scores average two axes, so 80s are rarer here.
+            <button type="button" id="keep-min">keep it at 80%</button></p>
+        {% endif %}
 
         <h2>Cards that do something similar
             <a href="#" id="report-missing" class="report-open">expected a card that isn't here?</a></h2>
@@ -91,7 +97,7 @@
                 <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="mechanics {{ r.mech_pct }}% · concept {{ r.concept_pct }}% — blended to match your slider"{% endif %}>{{ r.percent }}%</span></div>
                 {% if r.price %}<div class="result-price">{{ r.price }}</div>{% endif %}
                 {% if r.their_line %}
-                <div class="match-line" title="matches your card's line: {{ r.our_line }}">"{{ r.their_line }}"</div>
+                <div class="match-line" title="matches your card's line: {{ r.our_line }}{% if r.matched_back %} — printed on this card's back face, shown here{% endif %}">"{{ r.their_line }}"</div>
                 {% endif %}
                 {% if r.more_count %}
                 <div class="more-lines" title="{{ r.more_text }}">+{{ r.more_count }} more matching {% if r.more_count == 1 %}line{% else %}lines{% endif %}</div>
@@ -105,8 +111,8 @@
 
         {% if has_more or weak_count %}
         <div class="load-more-wrap">
-            <button id="load-more" data-min="{{ min_pct }}" data-blend="{{ blend }}" {% if not has_more %}data-tier="weak"{% endif %}>
-                {%- if has_more %}Load 20 more{% else %}Show {{ weak_count }} weaker matches{% if not blend %} (below {{ min_pct }}%){% endif %}{% endif -%}
+            <button id="load-more" data-min="{{ min_pct }}" {% if not has_more %}data-tier="weak"{% endif %}>
+                {%- if has_more %}Load 20 more{% else %}Show {{ weak_count }} weaker matches (below {{ min_pct }}%){% endif -%}
             </button>
         </div>
         {% endif %}
@@ -128,6 +134,31 @@
             a divider in the grid so the boundary is obvious. that way nobody
             ever hits a dead end or has to scroll back up to loosen things
         */
+        /*
+            the adaptive min-match default. an untouched min input stays out
+            of the query string so the server can pick the default that fits
+            the slider position (80 at pure mechanics, 70 while blending).
+            the keep-it-at-80 button pins the min for the whole session via
+            sessionStorage - once locked, min always travels explicitly and
+            the server never relaxes it again
+        */
+        document.querySelector(".filter-bar").addEventListener("submit", function() {
+            var minInput = document.querySelector('.filter-bar input[name="min"]');
+            if (!sessionStorage.getItem("minLock") && minInput.value == minInput.defaultValue) {
+                minInput.disabled = true;  //disabled inputs are left out of the query string
+                setTimeout(function() { minInput.disabled = false; }, 0);
+            }
+        });
+        var keepMin = document.getElementById("keep-min");
+        if (keepMin) {
+            keepMin.onclick = function() {
+                sessionStorage.setItem("minLock", "1");
+                var params = new URLSearchParams(window.location.search);
+                params.set("min", "80");
+                window.location.search = params.toString();
+            };
+        }
+
         var offset = 20;
         var btn = document.getElementById("load-more");
         if (btn) {
@@ -148,15 +179,11 @@
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
                         var grid = document.querySelector(".card-grid");
-                        //the first weak batch gets a divider so the quality drop is labeled.
-                        //with the slider away from mechanics the numbers are blended, so the
-                        //mechanical cutoff number would be a lie there
+                        //the first weak batch gets a divider so the quality drop is labeled
                         if (weakTier && offset == 0 && data.results.length) {
                             var divider = document.createElement("div");
                             divider.className = "weak-divider";
-                            divider.textContent = btn.dataset.blend != "0"
-                                ? "weaker matches from here"
-                                : "matches below " + btn.dataset.min + "% from here";
+                            divider.textContent = "matches below " + btn.dataset.min + "% from here";
                             grid.appendChild(divider);
                         }
                         data.results.forEach(function(r) {
@@ -188,7 +215,8 @@
                                 of quote characters that would break out of an attribute
                             */
                             if (r.their_line) {
-                                div.querySelector(".match-line").title = "matches your card's line: " + r.our_line;
+                                div.querySelector(".match-line").title = "matches your card's line: " + r.our_line +
+                                    (r.matched_back ? " — printed on this card's back face, shown here" : "");
                             }
                             if (r.more_count) {
                                 div.querySelector(".more-lines").title = r.more_text;
@@ -226,8 +254,7 @@
                                 //strong matches are done, repoint the button at the weak tier
                                 btn.dataset.tier = "weak";
                                 offset = 0;
-                                btn.textContent = "Show " + data.weak_count + " weaker matches" +
-                                    (btn.dataset.blend != "0" ? "" : " (below " + btn.dataset.min + "%)");
+                                btn.textContent = "Show " + data.weak_count + " weaker matches (below " + btn.dataset.min + "%)";
                             } else {
                                 //truly nothing left, no point keeping the button around
                                 btn.remove();
