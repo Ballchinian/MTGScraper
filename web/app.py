@@ -246,18 +246,19 @@ def read_number(s):
 
 def read_min(blend=0):
     #minimum match percent, in calibrated display units. 80 by default at
-    #pure mechanics: the map pins the model's real quality boundary there,
-    #same set of cards the old raw-90 cutoff kept. a blended badge is an
-    #average of two axes though, and averages rarely reach 80, so the
-    #DEFAULT relaxes to 70 while the slider is away from mechanics - only
-    #the default: an explicit min in the url always wins, and the page shows
-    #a note with a keep-it-at-80 button whenever the relaxed one applied.
+    #both ENDS of the slider: pure mechanics pins the model's real quality
+    #boundary there (same set of cards the old raw-90 cutoff kept), and pure
+    #concepts shows the calibrated concept score, where good matches also
+    #read 80+. the mixed detents show an average of two axes though, and
+    #averages rarely reach 80, so their DEFAULT relaxes to 70 - only the
+    #default: an explicit min in the url always wins, and the page shows a
+    #note with a keep-it-at-80 button whenever the relaxed one applied.
     #everything below the line still exists either way, it just pages in
     #behind the "show weaker matches" button instead of being thrown away
     try:
         m = int(request.args.get("min", ""))
     except ValueError:
-        m = 80 if blend == 0 else 70
+        m = 70 if 0 < blend < len(BLEND_WEIGHTS) - 1 else 80
     return max(0, min(m, 100))
 
 
@@ -633,7 +634,7 @@ def search():
     min_pct = read_min(blend)
     #the note with the keep-my-min button only shows when the relaxed
     #default actually kicked in, never over a min the user chose
-    min_auto = blend > 0 and request.args.get("min") is None
+    min_auto = 0 < blend < len(BLEND_WEIGHTS) - 1 and request.args.get("min") is None
     sort = read_sort()
     card_lines, picked = build_lines(card, read_picked())
 
