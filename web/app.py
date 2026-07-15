@@ -130,6 +130,27 @@ def concept_raw_gate(pct):
     return 1.0
 
 
+#the mechanical axis wears a calibration map too, same shape as the concept
+#one. raw cosine is arbitrary per model (this map is anchored to the tuned
+#embeddinggemma the ingest embeds with - swapping models means re-anchoring),
+#so the displayed percent is pinned to judged pairs instead. the load-bearing
+#anchor is 0.895 -> 80: the quality boundary the old raw-90 cutoff actually
+#guarded (int(round()) let 89.5 through) now READS as 80 and exactly the
+#same set of cards passes. identical text stays 100 (nothing that isn't
+#identical may show 100), the flagship match (rhystic/remora, raw .97) lands
+#low 90s, and the "same shell, different payload" band (raw ~.85) drops
+#visibly under the gate
+MECH_CALIBRATION = [(0.0, 0), (0.50, 30), (0.70, 45), (0.85, 65), (0.895, 80), (0.97, 92), (1.0, 100)]
+
+
+def mech_display(raw):
+    raw = max(0.0, min(1.0, raw))
+    for (x0, y0), (x1, y1) in zip(MECH_CALIBRATION, MECH_CALIBRATION[1:]):
+        if raw <= x1:
+            return round(y0 + (y1 - y0) * (raw - x0) / (x1 - x0))
+    return 100
+
+
 #the mechanics <-> concepts slider maps its detents to these axis-2 weights
 #(a 5% step existed once and changed nothing visible, so it went). results
 #are ordered by (1-w) * mech percent + w * concept percent, and once the
@@ -224,17 +245,18 @@ def read_number(s):
 
 
 def read_min():
-    #minimum match percent. 90 by default: on the fine tuned model the real
-    #matches sit in the 90s, while "same shell, different payload" matches
-    #(landfall gain life vs landfall proliferate) hover in the low-to-mid
-    #80s. under a price sort the match percent is the only quality gate
-    #left, so cheap half matches sorting to the top makes the site look
-    #broken. everything below the line still exists, it just pages in after
-    #the "show weaker matches" button instead of being thrown away
+    #minimum match percent, in calibrated display units. 80 by default: the
+    #map pins the model's real quality boundary to 80, so this keeps exactly
+    #the set of cards the old raw-90 cutoff kept - the number just finally
+    #means what it says, on both axes. under a price sort the percent is the
+    #only quality gate left, so cheap half matches sorting to the top makes
+    #the site look broken. everything below the line still exists, it just
+    #pages in after the "show weaker matches" button instead of being thrown
+    #away
     try:
-        m = int(request.args.get("min", 90))
+        m = int(request.args.get("min", 80))
     except ValueError:
-        m = 90
+        m = 80
     return max(0, min(m, 100))
 
 
@@ -380,11 +402,12 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         ranked.sort(key=lambda x: x[1][0][0], reverse=True)
 
         #split at the minimum match line. the percent a card shows is its best
-        #pair's real similarity, so that's what decides which side it lands on
+        #pair's calibrated similarity, so that's what decides which side it
+        #lands on
         strong = []
         weak_tier = []
         for entry in ranked:
-            if int(round(entry[1][0][1] * 100)) >= min_pct:
+            if mech_display(entry[1][0][1]) >= min_pct:
                 strong.append(entry)
             else:
                 weak_tier.append(entry)
@@ -462,7 +485,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
 
             def blended(entry):
                 oid, pairs = entry
-                mech = pairs[0][1] * 100 if pairs else 0.0
+                mech = mech_display(pairs[0][1]) if pairs else 0
                 return (1 - blend) * mech + blend * concept_display(concept_raw.get(oid, 0.0))
             strong.sort(key=blended, reverse=True)
             #the weak tier gets the same lens, so its numbers read in order too
@@ -522,7 +545,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         more = []
         if pairs:
             score, sim, our_line, their_line = pairs[0]
-            mech_pct = int(round(sim * 100))
+            mech_pct = mech_display(sim)
             concept_only = False
             #the extra pairs behind the "+n more matching lines" hint. pairs that
             #reuse a line already shown get skipped, so the count means genuinely
@@ -534,7 +557,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                     continue
                 used_ours.append(p[2])
                 used_theirs.append(p[3])
-                more.append('"' + p[3] + '" (' + str(int(round(p[1] * 100))) + '%) matches your "' + p[2] + '"')
+                more.append('"' + p[3] + '" (' + str(mech_display(p[1])) + '%) matches your "' + p[2] + '"')
         else:
             #a pure concept match: no line of rules text got it here
             our_line = ""
@@ -743,23 +766,32 @@ def client_ip():
 
 
 def best_sim(conn, anchor_id, other_id, picked):
-    #the best real similarity between the anchor's lines (only the picked
-    #ones, if any are picked) and any line of the other card, the same
-    #number the results page prints next to a card. None means the other
-    #card has no searchable lines at all
+    #the calibrated percent the results page prints next to the other card.
+    #the winning pair is chosen by WEIGHTED similarity, exactly like the
+    #ranking (a bare max would disagree with the page: boots and greaves
+    #share near-identical Equip lines at raw .99 that the idf weighting
+    #buries), and the number returned is that pair's real similarity. None
+    #means the other card has no searchable lines at all
     sql = """
-        SELECT max(1 - (a.embedding <=> b.embedding)) AS sim
-        FROM lines a, lines b
-        WHERE a.oracle_id = %s AND b.oracle_id = %s
+        SELECT 1 - (a.embedding <=> b.embedding) AS sim,
+               coalesce(s.count, 1) AS count
+        FROM lines a
+        JOIN lines b ON b.oracle_id = %s
+        LEFT JOIN line_stats s ON s.line_text = a.line_text
+        WHERE a.oracle_id = %s
     """
-    params = [anchor_id, other_id]
+    params = [other_id, anchor_id]
     if picked:
         sql += " AND a.line_text = ANY(%s)"
         params.append(list(picked))
-    sim = conn.execute(sql, params).fetchone()["sim"]
-    if sim is None:
+    best = None
+    for r in conn.execute(sql, params):
+        weighted = line_weight(r["count"]) * r["sim"]
+        if best is None or weighted > best[0]:
+            best = (weighted, r["sim"])
+    if best is None:
         return None
-    return int(round(sim * 100))
+    return mech_display(best[1])
 
 
 def filter_reasons(card, filters):
@@ -843,6 +875,9 @@ def feedback():
         #(blended past detent 0), so it rides in the snapshot too
         blend = read_blend()
         snap["blend"] = blend
+        #scale marker: reports from before 2026-07-15 stored raw-cosine
+        #percents, everything after stores calibrated display percents
+        snap["cal"] = 1
 
         if kind == "missing":
             expected_name = str(body.get("expected", "")).strip()[:200]
