@@ -50,7 +50,7 @@
         {% if min_auto %}
         {# only shows when the relaxed default kicked in, never over a min the
            user chose. the button pins 80 for the whole browser session #}
-        <p class="min-note">min match relaxed to {{ min_pct }}% while blending — blended scores average two axes, so 80s are rarer here.
+        <p class="min-note">min match relaxed to {{ min_pct }}% while blending, since blended scores average the two axes.
             <button type="button" id="keep-min">keep it at 80%</button></p>
         {% endif %}
 
@@ -94,10 +94,10 @@
                     </a>
                     <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="shouldn't be here? report this as a bad match">?</button>
                 </div>
-                <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="mechanics {{ r.mech_pct }}% · concept {{ r.concept_pct }}% — blended to match your slider"{% endif %}>{{ r.percent }}%</span></div>
+                <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="mechanics {{ r.mech_pct }}% and concept {{ r.concept_pct }}%, blended for your slider position"{% endif %}>{{ r.percent }}%</span></div>
                 {% if r.price %}<div class="result-price">{{ r.price }}</div>{% endif %}
                 {% if r.their_line %}
-                <div class="match-line" title="matches your card's line: {{ r.our_line }}{% if r.matched_back %} — printed on this card's back face, shown here{% endif %}">"{{ r.their_line }}"</div>
+                <div class="match-line" title="matches your card's line: {{ r.our_line }}{% if r.matched_back %} (printed on the back face, shown here){% endif %}">"{{ r.their_line }}"</div>
                 {% endif %}
                 {% if r.more_count %}
                 <div class="more-lines" title="{{ r.more_text }}">+{{ r.more_count }} more matching {% if r.more_count == 1 %}line{% else %}lines{% endif %}</div>
@@ -158,6 +158,27 @@
                 window.location.search = params.toString();
             };
         }
+        /*
+            the way back from the pin: on blended pages a small note offers
+            to unpin, which clears the lock and drops min from the url so
+            the server picks the fitting default again
+        */
+        if (sessionStorage.getItem("minLock") && new URLSearchParams(window.location.search).get("blend") > 0 && !keepMin) {
+            var pinned = document.createElement("p");
+            pinned.className = "min-note";
+            pinned.textContent = "min match is pinned for this session. ";
+            var unpin = document.createElement("button");
+            unpin.type = "button";
+            unpin.textContent = "let it adapt to the slider";
+            unpin.onclick = function() {
+                sessionStorage.removeItem("minLock");
+                var params = new URLSearchParams(window.location.search);
+                params.delete("min");
+                window.location.search = params.toString();
+            };
+            pinned.appendChild(unpin);
+            document.querySelector(".filter-bar").after(pinned);
+        }
 
         var offset = 20;
         var btn = document.getElementById("load-more");
@@ -216,7 +237,7 @@
                             */
                             if (r.their_line) {
                                 div.querySelector(".match-line").title = "matches your card's line: " + r.our_line +
-                                    (r.matched_back ? " — printed on this card's back face, shown here" : "");
+                                    (r.matched_back ? " (printed on the back face, shown here)" : "");
                             }
                             if (r.more_count) {
                                 div.querySelector(".more-lines").title = r.more_text;
@@ -227,7 +248,7 @@
                                 tagsDiv.title = "community tags shared with your card" + (r.concept_only ? "" : " - concept match " + r.concept_pct + "%");
                             }
                             if (r.blended) {
-                                div.querySelector(".percent").title = "mechanics " + r.mech_pct + "% · concept " + r.concept_pct + "% — blended to match your slider";
+                                div.querySelector(".percent").title = "mechanics " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
                             }
                             /*
                                 the report flag is built as an element for the same

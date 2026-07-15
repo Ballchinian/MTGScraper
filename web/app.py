@@ -490,7 +490,8 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         #price sorting happens after the filters, the ranking and the tier
         #split, so the percent keeps meaning what it always meant and weak
         #cards can never leapfrog strong ones. cards with no price sink to
-        #the bottom and ties fall back to match score
+        #the bottom and ties fall back to the badge score, which also covers
+        #concept-found cards that carry no line pairs at all
         if sort != "best":
             priced = []
             unpriced = []
@@ -500,9 +501,9 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                 else:
                     priced.append(entry)
             if sort == "cheap":
-                priced.sort(key=lambda x: (float(prices[x[0]]), -x[1][0][0]))
+                priced.sort(key=lambda x: (float(prices[x[0]]), -gate_score(x)))
             else:
-                priced.sort(key=lambda x: (-float(prices[x[0]]), -x[1][0][0]))
+                priced.sort(key=lambda x: (-float(prices[x[0]]), -gate_score(x)))
             wanted = priced + unpriced
 
         has_more = len(wanted) > offset + how_many
@@ -994,12 +995,12 @@ def report_markdown(r, line_texts, n):
         mode += ") - consider axis2.md"
 
     out = str(n) + ".\n"
-    out += "    **Anchor:** " + r["anchor_name"] + " — " + q(anchor_lines) + "\n"
+    out += "    **Anchor:** " + r["anchor_name"] + " - " + q(anchor_lines) + "\n"
     if r["kind"] == "misplaced":
-        out += "    **NOT:** " + (r["got_name"] or "?") + " — " + q(line_texts.get(r["got_id"], [])) + "\n"
+        out += "    **NOT:** " + (r["got_name"] or "?") + " - " + q(line_texts.get(r["got_id"], [])) + "\n"
         out += "    *user report " + day + "; the flagged card showed at " + str(r["got_pct"]) + "% mech" + mode + "; reason: " + r["reason"] + "*\n"
     else:
-        out += "    **Match:** " + (r["expected_name"] or "?") + " — " + q(line_texts.get(r["expected_id"], [])) + "\n"
+        out += "    **Match:** " + (r["expected_name"] or "?") + " - " + q(line_texts.get(r["expected_id"], [])) + "\n"
         note = "user report " + day + "; scored " + str(r["expected_pct"]) + "% mech against the cutoff" + mode
         if r["reason"]:
             note += "; reason: " + r["reason"]
