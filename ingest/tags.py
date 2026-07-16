@@ -59,7 +59,8 @@ def main():
     row = conn.execute("SELECT value FROM meta WHERE key = 'tagger_updated_at'").fetchone()
     if (row and row[0] == updated_at
             and conn.execute("SELECT 1 FROM card_tags LIMIT 1").fetchone()
-            and conn.execute("SELECT 1 FROM card_tag_norms LIMIT 1").fetchone()):
+            and conn.execute("SELECT 1 FROM card_tag_norms LIMIT 1").fetchone()
+            and conn.execute("SELECT 1 FROM cards WHERE concept_uniqueness IS NOT NULL LIMIT 1").fetchone()):
         print("already processed the tag file from " + updated_at + ", nothing to do")
         conn.close()
         return
@@ -127,6 +128,44 @@ def main():
             INSERT INTO meta (key, value) VALUES ('tagger_updated_at', %s)
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
         """, (updated_at,))
+    conn.commit()
+
+    #concept uniqueness, the tag-space counterpart of lines.nn_sim: 1 minus
+    #the best cosine any OTHER card's idf-weighted tag vector manages. same
+    #all-pairs-in-blocks trick as the ingest's uniqueness pass. untagged
+    #cards stay NULL, unknown is not the same as unique
+    print("computing concept uniqueness...")
+    import math
+    import numpy as np
+
+    n_cards = len(ours)
+    idf = {slug: math.log(n_cards / max(count_of.get(slug, 1), 1)) for slug, _, _, _ in tag_rows}
+    tag_col = {slug: i for i, slug in enumerate(sorted(idf))}
+    card_row = {}
+    for oid, slug in links:
+        card_row.setdefault(oid, len(card_row))
+    m = np.zeros((len(card_row), len(tag_col)), dtype=np.float32)
+    for oid, slug in links:
+        m[card_row[oid], tag_col[slug]] = idf[slug]
+    norms = np.linalg.norm(m, axis=1, keepdims=True)
+    norms[norms == 0] = 1  #cant happen unless a tag covers every card, but nan poisons everything
+    m /= norms
+
+    best = np.zeros(len(card_row), dtype=np.float32)
+    block = 256
+    for start in range(0, len(card_row), block):
+        sims = m[start:start + block] @ m.T
+        for r in range(sims.shape[0]):
+            sims[r, start + r] = -2.0  #a card is not its own neighbor
+        best[start:start + block] = sims.max(axis=1)
+
+    with conn.cursor() as cur:
+        cur.execute("CREATE TEMP TABLE cu_tmp (oracle_id uuid PRIMARY KEY, cu real) ON COMMIT DROP")
+        with cur.copy("COPY cu_tmp (oracle_id, cu) FROM STDIN") as copy:
+            for oid, i in card_row.items():
+                copy.write_row((oid, float(1.0 - best[i])))
+        cur.execute("UPDATE cards c SET concept_uniqueness = t.cu FROM cu_tmp t WHERE c.oracle_id = t.oracle_id")
+        cur.execute("UPDATE cards SET concept_uniqueness = NULL WHERE oracle_id NOT IN (SELECT oracle_id FROM card_tags)")
     conn.commit()
 
     covered = conn.execute("SELECT count(DISTINCT oracle_id) FROM card_tags").fetchone()[0]

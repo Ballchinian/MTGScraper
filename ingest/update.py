@@ -244,7 +244,7 @@ def main():
                           "".join(c.get("color_identity", [])), prices.get("usd"), prices.get("eur"),
                           c.get("cmc", 0), c.get("game_changer", False),
                           c.get("legalities", {}).get("commander") == "legal",
-                          c.get("layout", "normal"), get_back_image(c)))
+                          c.get("layout", "normal"), get_back_image(c), c.get("edhrec_rank")))
         old = have.get(c["oracle_id"])
         if old is None:
             new_cards.append((c, h))
@@ -275,8 +275,8 @@ def main():
         cur.executemany("""
             INSERT INTO cards (oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, text_hash,
                                color_identity, price_usd, price_eur, cmc, game_changer, legal_commander,
-                               layout, image_back, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                               layout, image_back, edhrec_rank, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (oracle_id) DO UPDATE SET
                 name = EXCLUDED.name,
                 mana_cost = EXCLUDED.mana_cost,
@@ -293,6 +293,7 @@ def main():
                 legal_commander = EXCLUDED.legal_commander,
                 layout = EXCLUDED.layout,
                 image_back = EXCLUDED.image_back,
+                edhrec_rank = EXCLUDED.edhrec_rank,
                 updated_at = now()
         """, card_rows)
 

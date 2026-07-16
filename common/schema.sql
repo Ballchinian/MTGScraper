@@ -50,6 +50,17 @@ ALTER TABLE cards ADD COLUMN IF NOT EXISTS legal_commander boolean NOT NULL DEFA
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS uniqueness real;
 ALTER TABLE cards ADD COLUMN IF NOT EXISTS unique_line text;
 
+--the concept counterpart: how alone a card is in tag space, 1 minus the
+--best cosine any other card's tag vector manages. filled by ingest/tags.py
+--so /unique can slide between rules-text-unique and concept-unique. stays
+--NULL for untagged cards, unknown is not the same as unique
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS concept_uniqueness real;
+
+--scryfall's edhrec popularity rank, 1 is the most played card in the
+--format. powers the most/least played sorts. NULL means unranked, which
+--reads as maximally obscure
+ALTER TABLE cards ADD COLUMN IF NOT EXISTS edhrec_rank int;
+
 --how the card physically works, straight from scryfall: 'split' and battle
 --type lines mean the picture is printed sideways and the site pre-rotates
 --it readable, 'flip' means the bottom half reads upside down, and
