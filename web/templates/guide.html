@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}How it works - Delvefall{% endblock %}
+
+{% block content %}
+<div class="guide">
+    <h1>How Delvefall works</h1>
+    <p>Type a card name, get the cards that do the same thing. Delvefall isn't a chatbot
+    guessing: it compares the printed rules text of every Magic card with plain math.</p>
+
+    {% if demo %}
+    <h2>Reading a result</h2>
+    <div class="guide-demo">
+        <div class="result">
+            <div class="card-frame">
+                <img src="{{ demo.image }}" alt="{{ demo.name }}">
+                <button class="report-flag guide-static">? <span class="guide-dot guide-dot-flag">5</span></button>
+                <div class="card-overlay guide-static-overlay">
+                    <button>&#8644; transform</button>
+                    <span class="guide-dot">6</span>
+                </div>
+            </div>
+            <div class="result-name">{{ demo.name }} <span class="percent"> 82% <span class="guide-dot">1 </span></span></div>
+            <div class="result-price">$0.25<span class="result-rank">#412</span> <span class="guide-dot">2</span></div>
+            <div class="match-line"> "Look at the top card of your library."<span class="guide-dot">3</span></div>
+            <div class="concept-tags">library-peek, transform, spells-matter <span class="guide-dot">4</span></div>
+        </div>
+        <ol class="guide-legend">
+            <li>How close the match is. 80 or higher means a real match. With the slider
+                moved (for rules text and concepts) this number blends both scores</li>
+            <li>What it costs in dollars, from scryfall. It's the printing scryfall prefers,
+                not the cheapest one in existence | How often the card shows up in commander 
+                decks, edhrec's rank. #1 is the most played card in the format.</li>
+            <li>The line of rules text that matched. Hover it to see which of your card's
+                lines it matched.</li>
+            <li>The community tags this card shares with yours, rarest first. These power
+                the concepts side of the slider.</li>
+            <li>Think the card doesn't belong? Click the flag and say why. Reports become
+                test cases the matcher is graded against before an update ships.</li>
+            <li>Cards with more than one face get a control over the art, shown when you
+                hover the picture. Double-faced cards like this one get transform for the
+                back, battles and split cards get rotate, kamigawa flip cards get flip.</li>
+        </ol>
+    </div>
+    <p>Clicking a result's picture opens it on Scryfall. <strong>Ctrl-click</strong> (cmd
+    on mac) searches that card here instead, for following a thread without leaving.</p>
+    {% endif %}
+
+    <h2>The slider: rules text vs concepts</h2>
+    <p>Two ways for cards to be similar, one slider between them.</p>
+    <ul>
+        <li><strong>rules text</strong> (the left end, the default): cards whose printed text
+            works the same way. Search Sol Ring, get the other rocks that tap for two.</li>
+        <li><strong>concepts</strong> (the right end): cards built around the same idea, from
+            community tags. Search Sol Ring, get the whole mana-rock family.</li>
+        <li>In between, both count. The badge on every card shows the blend that ordered the
+            list, and the list is always in order of the number you see.</li>
+    </ul>
+    <p>On the mixed positions the min match bar relaxes from 80 to 70 by itself (blended
+    scores are averages, they rarely reach 80). A note says so when it happens, one click
+    keeps your own bar instead. The slider remembers where you left it. From the prospective 
+    of rules text and the slider position on the left, this is how much concepts are weighted into the result: <i>0/25/50/75/100</i></p>
+
+    <h2>Search one ability, not the whole card</h2>
+    <p>On the results page your card's rules text is listed line by line. Click a line and
+    the search uses just that ability. Click more lines to combine them.</p>
+
+    <h2>Filters and tricks</h2>
+    <ul>
+        <li>Every filter lives behind the "extra filters" fold in the filter bar, each one
+            explained where it sits. Filters narrow who competes, never the scores.</li>
+        <li>The filter bar below the chosen card is a search box that uses scryfall's syntax and 
+            applies it to the results (the search box itself only takes card names). 
+            <code>-o:sacrifice usd&lt;=5</code> keeps results cheap and free of sacrifice clauses. 
+            The full set:
+            <ul>
+                <li><code>o:word</code> rules text contains it, <code>o:"draw a card"</code>
+                    for phrases</li>
+                <li><code>t:legendary</code> the type line must contain this, any word works</li>
+                <li><code>id:wu</code> color identity (fits-within), <code>id:c</code> colorless</li>
+                <li><code>otag:removal</code> the community tags, served from this site's own
+                    daily mirror of scryfall's tagger data</li>
+                <li><code>usd&lt;5</code> <code>usd&gt;=1</code> price in dollars,
+                    <code>eur&lt;5</code> in euros, <code>mv&lt;=2</code> <code>cmc=4</code>
+                    mana value</li>
+                <li><code>is:dfc</code> two-sided cards, <code>is:split</code>
+                    <code>is:mdfc</code> <code>is:saga</code> and other layouts,
+                    <code>is:gamechanger</code> the commander watchlist</li>
+                <li><code>f:commander</code> legal in commander, <code>banned:commander</code>
+                    the reverse (commander is the only format tracked)</li>
+                <li>a <code>-</code> negates anything (<code>-t:creature</code> means no
+                    creatures), words side by side mean and, <code>or</code> and parentheses
+                    group: <code>(o:draw or o:scry) -t:creature</code></li>
+            </ul>
+            That's the whole vocabulary, not all of scryfall's. There's no
+            <code>pow</code>/<code>tou</code>, rarity, set, artist, format beyond commander,
+            or regex here yet, the cards table just doesn't carry those fields. Anything the
+            box doesn't recognise is skipped rather than erroring, so a stray word never
+            breaks the search.
+        </li>
+        <li>Price sorts keep the quality bar: results still have to pass min match, they just
+            reorder by cost. Handy for finding the budget version of an expensive card.</li>
+        <li>Everything under the min match bar still exists. The "show weaker matches" button
+            at the bottom pages through all of it, weakest last.</li>
+        <li>Missing a card you expected? The "expected a card that isn't here?" link checks it
+            against your filters and the matcher, and tells you if one hid it.</li>
+    </ul>
+
+    <h2>Unique cards</h2>
+    <p><a href="/unique">The unique page</a> is the opposite of search: it deals you cards
+    that do something no other card really does, always from the 100
+    most (would you believe it) unique cards you haven't seen yet. It has the same slider and filters. On
+    the rules text end you get (hopefully interesting) abilities, on the concepts end you get cards
+    whose tag profile matches nothing else. The arrows walk back through everything
+    you've been dealt, across visits.</p>
+</div>
+{% endblock %}

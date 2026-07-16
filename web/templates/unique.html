@@ -5,20 +5,18 @@
 {% block content %}
     <div class="unique-intro">
         <h1>Unique cards</h1>
-        <p>The opposite of a random card: this deals you a card that does something no other
-        card really does. A card's uniqueness is 100 minus the best match its most
-        one-of-a-kind rules line has anywhere else in the game. Tune the bar, set your
-        filters, hunt for a card your next deck gets built around.</p>
+        <p>The opposite of a random card: this deals you cards that do something no other
+        card really does. Every deal picks from the 100 
+        (would you believe it) most unique cards you haven't seen yet, so there is always a next card and it
+        slowly works its way toward ordinary. Set your filters and let your imagination run wild.</p>
     </div>
 
     {# no submit button here on purpose: the deal happens on load and through
        the repeat button, and pressing enter in a field deals too because the
        form's submit handler is the dealer #}
     <form id="unique-form" class="filter-bar">
+        <label class="blend-slider" title="Rules text: no other card's printed text comes close | Concepts: no other card is tagged like it">rules text <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
         {% include "_filters.html" %}
-        <label title="100 minus the best match the card's most one-of-a-kind line has anywhere else. nothing in the game reaches 51, let alone 100">
-            uniqueness &ge; <input type="number" name="u" min="0" max="100" step="5" value="{{ unique_default }}">
-        </label>
     </form>
 
     {# the controls sit ABOVE the card so spamming through cards never makes
@@ -83,6 +81,8 @@ function render(c) {
     var link = document.createElement("a");
     link.href = c.scryfall_uri;
     link.target = "_blank";
+    link.title = "opens on scryfall. ctrl-click to search this card here instead";
+    link.dataset.name = c.name;
     var img = document.createElement("img");
     img.src = c.image;
     img.alt = c.name;
@@ -100,10 +100,17 @@ function render(c) {
     name.appendChild(pct);
     div.appendChild(name);
 
-    if (c.price) {
+    if (c.price || c.rank) {
         var price = document.createElement("div");
         price.className = "result-price";
         price.textContent = c.price;
+        if (c.rank) {
+            var rank = document.createElement("span");
+            rank.className = "result-rank";
+            rank.title = "edhrec rank, 1 is the most played card in commander";
+            rank.textContent = c.rank;
+            price.appendChild(rank);
+        }
         div.appendChild(price);
     }
 
@@ -155,6 +162,19 @@ function showAt(i) {
             }
         });
 }
+
+/*
+    ctrl-click (cmd on mac) on the dealt card's picture searches it here
+    instead of opening scryfall, the same rabbit-hole hop the results page
+    offers. delegated on the box so it survives every repaint
+*/
+cardBox.addEventListener("click", function(e) {
+    var link = e.target.closest(".card-frame a");
+    if (link && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        window.location = "/search?q=" + encodeURIComponent(link.dataset.name);
+    }
+});
 
 backBtn.onclick = function() { if (pos > 0) { showAt(pos - 1); } };
 fwdBtn.onclick = function() { if (pos < seen.length - 1) { showAt(pos + 1); } };

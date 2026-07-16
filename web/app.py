@@ -9,7 +9,7 @@ import math
 import uuid
 import json
 
-from flask import Flask, render_template, request, redirect, abort
+from flask import Flask, render_template, request, redirect, abort, make_response
 
 from db import pool
 from prefix_words import PREFIX_WORDS
@@ -49,7 +49,7 @@ with pool.connection() as _conn:
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 
 #the display columns the frontend needs, so every query grabs the same set
-CARD_FIELDS = "oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, price_usd, layout, image_back"
+CARD_FIELDS = "oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, price_usd, layout, image_back, edhrec_rank"
 
 #the choices in the type filter dropdown. also acts as a whitelist so
 #nothing weird from the url ends up inside a LIKE pattern
@@ -58,18 +58,6 @@ CARD_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Plan
 #the /unique page deals this many cards per request. one at a time, its the
 #counterpart to scryfall's random card button
 UNIQUE_PAGE = 1
-
-#default minimum uniqueness (0-100, higher = more unique). a card's
-#uniqueness is 100 minus the best match its most isolated line has anywhere
-#else in the game, precomputed by the ingest into cards.uniqueness.
-#
-#measured on the real data (2026-07-13): the median card only scores ~8,
-#because most cards have a near twin somewhere. 30 keeps the top ~2.4%
-#(739 cards), which is where the genuinely deck-defining stuff lives, and
-#nothing in the whole game clears 51, so the input's ceiling of 100 is
-#theoretical. lowering the bar is one keystroke on the page
-UNIQUE_DEFAULT = 30
-
 
 #copied from common/cards.py because railway only deploys the web folder.
 #it has to stay identical to what the ingest used, otherwise the line picker
@@ -199,6 +187,13 @@ def find_card(query):
 #all the url params past q and offset live in these little readers. home()
 #and /more both use them, so the load more button sees exactly the same
 #filters and picked lines as the page it's glued onto
+
+def rank_label(rank):
+    #edhrec's popularity rank next to the price, 1 being the most played card
+    #in the format. plenty of cards are unranked (nobody plays them, or
+    #they're too new to have a rank yet), those just show nothing
+    return "#" + str(rank) if rank is not None else ""
+
 
 def sideways(layout, type_line):
     #battles and split cards are printed sideways, so their pictures start
@@ -428,15 +423,21 @@ def read_min(blend=0):
 
 def read_sort():
     s = request.args.get("sort", "")
-    if s not in ("cheap", "pricey"):
+    if s not in ("cheap", "pricey", "played", "obscure"):
         s = "best"
     return s
 
 
 def read_blend():
-    #the slider's detent, 0 (pure mechanics) through 6 (pure concepts)
+    #the slider's detent, 0 (pure rules text) through 4 (pure concepts).
+    #the url wins, then the remembered cookie, then 0. people who like the
+    #slider somewhere tend to want it there tomorrow too, so the preference
+    #survives closing the browser
+    raw = request.args.get("blend")
+    if raw is None:
+        raw = request.cookies.get("blend", "0")
     try:
-        b = int(request.args.get("blend", 0))
+        b = int(raw)
     except ValueError:
         b = 0
     return max(0, min(b, len(BLEND_WEIGHTS) - 1))
@@ -527,6 +528,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
     #weak=True means the caller is paging through that second tier
     pairs_by_card = {}  #other card's oracle_id -> list of (weighted score, real similarity, our line, their line)
     prices = {}         #other card's oracle_id -> usd price, for the price sorts
+    ranks = {}          #other card's oracle_id -> edhrec rank, for the played sorts
     where, fparams = filter_sql(filters)
     with pool.connection() as conn:
         #the query card's lines are already embedded in the database, so the
@@ -551,7 +553,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             #<=> is pgvector's cosine distance, so similarity is 1 minus it.
             #grab way more than we need since a bunch will get merged per card
             matches = conn.execute("""
-                SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, c.price_usd
+                SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, c.price_usd, c.edhrec_rank
                 FROM lines l JOIN cards c ON c.oracle_id = l.oracle_id
                 WHERE l.oracle_id <> %s AND NOT l.whole""" + where + """
                 ORDER BY l.embedding <=> %s
@@ -562,6 +564,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                     pairs_by_card[m["oracle_id"]] = []
                 pairs_by_card[m["oracle_id"]].append((m["sim"] * w, m["sim"], ql["line_text"], m["line_text"], m["face"]))
                 prices[m["oracle_id"]] = m["price_usd"]
+                ranks[m["oracle_id"]] = m["edhrec_rank"]
 
         #sort each card's pairs so pairs[0] is its best one, then rank the
         #cards by that best pair
@@ -586,7 +589,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                     JOIN tags t ON t.tag = ct.tag
                     WHERE ct.oracle_id = %s
                 )
-                SELECT ct.oracle_id, c.price_usd,
+                SELECT ct.oracle_id, c.price_usd, c.edhrec_rank,
                        sum(a.idf * a.idf) / (na.norm * nc.norm) AS raw
                 FROM card_tags ct
                 JOIN anchor a ON a.tag = ct.tag
@@ -594,7 +597,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                 JOIN card_tag_norms nc ON nc.oracle_id = ct.oracle_id
                 JOIN card_tag_norms na ON na.oracle_id = %s
                 WHERE ct.oracle_id <> %s""" + where + """
-                GROUP BY ct.oracle_id, c.price_usd, na.norm, nc.norm
+                GROUP BY ct.oracle_id, c.price_usd, c.edhrec_rank, na.norm, nc.norm
                 HAVING sum(a.idf * a.idf) / (na.norm * nc.norm) >= %s
                 ORDER BY raw DESC
                 LIMIT 300
@@ -602,6 +605,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             for r in rows:
                 concept_raw[r["oracle_id"]] = r["raw"]
                 prices.setdefault(r["oracle_id"], r["price_usd"])
+                ranks.setdefault(r["oracle_id"], r["edhrec_rank"])
 
             #every mechanical candidate needs its concept score too, the
             #blend weighs both axes for everyone
@@ -656,12 +660,12 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         else:
             wanted = strong
 
-        #price sorting happens after the filters, the ranking and the tier
-        #split, so the percent keeps meaning what it always meant and weak
-        #cards can never leapfrog strong ones. cards with no price sink to
-        #the bottom and ties fall back to the badge score, which also covers
-        #concept-found cards that carry no line pairs at all
-        if sort != "best":
+        #the alternate sorts happen after the filters, the ranking and the
+        #tier split, so the percent keeps meaning what it always meant and
+        #weak cards can never leapfrog strong ones. cards with no price sink
+        #to the bottom of the price sorts, and ties fall back to the badge
+        #score, which also covers concept-found cards with no line pairs
+        if sort in ("cheap", "pricey"):
             priced = []
             unpriced = []
             for entry in wanted:
@@ -674,6 +678,13 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             else:
                 priced.sort(key=lambda x: (-float(prices[x[0]]), -gate_score(x)))
             wanted = priced + unpriced
+        elif sort in ("played", "obscure"):
+            #edhrec rank, 1 = the format's most played card. no rank reads
+            #as nobody plays it, so unranked cards sink on the played sort
+            #and float on the obscure one
+            worst = 10 ** 9
+            flip = 1 if sort == "played" else -1
+            wanted = sorted(wanted, key=lambda x: (flip * (ranks.get(x[0]) or worst), -gate_score(x)))
 
         has_more = len(wanted) > offset + how_many
         page = wanted[offset:offset + how_many]
@@ -765,6 +776,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             "our_line": our_line,
             "their_line": their_line,
             "price": price,
+            "rank": rank_label(c["edhrec_rank"]),
             "more_count": len(more),
             "more_text": "\n".join(more),
         })
@@ -808,25 +820,30 @@ def search():
 
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, min_pct, sort,
                                                  blend=BLEND_WEIGHTS[blend])
-    return render_template("search.html", query=query, card=card, card_lines=card_lines,
-                           picked_count=len(picked), results=results, has_more=has_more,
-                           weak_count=weak_count, min_pct=min_pct, min_auto=min_auto,
-                           blend=blend, types=CARD_TYPES)
+    resp = make_response(render_template("search.html", query=query, card=card, card_lines=card_lines,
+                                         picked_count=len(picked), results=results, has_more=has_more,
+                                         weak_count=weak_count, min_pct=min_pct, min_auto=min_auto,
+                                         blend=blend, types=CARD_TYPES))
+    #an explicit slider position becomes the remembered one. moving it back
+    #to rules text remembers that too, so there is no stuck state
+    if request.args.get("blend") is not None:
+        resp.set_cookie("blend", str(blend), max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return resp
 
 
-def read_unique():
-    #the u param on /unique/cards, how unique a card has to be before the
-    #shuffle is allowed to deal it. same clamping story as read_min
-    try:
-        u = int(request.args.get("u", UNIQUE_DEFAULT))
-    except ValueError:
-        u = UNIQUE_DEFAULT
-    return max(0, min(u, 100))
+@app.route("/guide")
+def guide():
+    #the how-it-works page. the demo card is fetched live so its picture
+    #stays current, and the page just skips the demo if it ever vanishes.
+    #a transform card on purpose, so the legend can point at the transform
+    #button the card-frame overlay puts on two-faced cards
+    demo = find_card("Delver of Secrets")
+    return render_template("guide.html", demo=demo)
 
 
 @app.route("/unique")
 def unique():
-    return render_template("unique.html", types=CARD_TYPES, unique_default=UNIQUE_DEFAULT)
+    return render_template("unique.html", types=CARD_TYPES, blend=read_blend())
 
 
 def card_json(c):
@@ -847,7 +864,8 @@ def card_json(c):
         "flip": c["layout"] == "flip",
         "scryfall_uri": c["scryfall_uri"],
         "price": price,
-        "percent": int(round((c["uniqueness"] or 0) * 100)),
+        "rank": rank_label(c["edhrec_rank"]),
+        "percent": int(round((c.get("blended_u") if c.get("blended_u") is not None else (c["uniqueness"] or 0)) * 100)),
         "unique_line": c["unique_line"] or "",
     }
 
@@ -861,7 +879,6 @@ def unique_cards():
     #random draw from everything that qualifies, not the top of a ranking, so
     #every press feels like a fresh pack
     filters = read_filters()
-    u = read_unique()
     body = request.get_json(silent=True) or {}
     seen = []
     for s in body.get("seen", []):
@@ -873,17 +890,27 @@ def unique_cards():
             pass
 
     where, fparams = filter_sql(filters)
-    #the -0.5 makes the sql cutoff agree with the rounded percent the page
-    #shows: a card displayed as exactly u% still qualifies at u
+    #no uniqueness bar anymore: the dealer takes the 100 most unique unseen
+    #cards that fit the filters and deals one at random. the window slides
+    #down as the trail grows, so there is always a next card until the
+    #filters truly run dry, and nobody has to learn what a uniqueness
+    #number means. the slider decides which KIND of unique: rules-text
+    #isolation, tag-space isolation, or a mix. cards with no searchable
+    #lines stay excluded, untagged cards count as 0 on the concept side
+    w = BLEND_WEIGHTS[read_blend()]
+    blended = "((1 - %s) * c.uniqueness + %s * coalesce(c.concept_uniqueness, 0))"
     cond = """
         FROM cards c
-        WHERE c.uniqueness * 100.0 >= %s - 0.5
+        WHERE c.uniqueness IS NOT NULL
           AND NOT (c.oracle_id = ANY(%s::uuid[]))""" + where
-    params = [u, seen] + fparams
+    params = [seen] + fparams
     with pool.connection() as conn:
         remaining = conn.execute("SELECT count(*) AS n" + cond, params).fetchone()["n"]
-        rows = conn.execute("SELECT " + CARD_FIELDS + ", uniqueness, unique_line" + cond +
-                            " ORDER BY random() LIMIT %s", params + [UNIQUE_PAGE]).fetchall()
+        rows = conn.execute("SELECT * FROM (SELECT " + CARD_FIELDS + ", uniqueness, unique_line, "
+                            + blended + " AS blended_u" + cond + """
+                            ORDER BY blended_u DESC LIMIT 100) top_window
+                            ORDER BY random() LIMIT %s""",
+                            [w, w] + params + [UNIQUE_PAGE]).fetchall()
 
     cards = []
     for c in rows:
@@ -905,8 +932,13 @@ def unique_card():
     except ValueError:
         return {"card": None}
     with pool.connection() as conn:
-        c = conn.execute("SELECT " + CARD_FIELDS + ", uniqueness, unique_line FROM cards WHERE oracle_id = %s",
-                         (oid,)).fetchone()
+        #the trail arrows show the same blended number a fresh deal would,
+        #using the remembered slider position
+        w = BLEND_WEIGHTS[read_blend()]
+        c = conn.execute("SELECT " + CARD_FIELDS + """, uniqueness, unique_line,
+                            ((1 - %s) * uniqueness + %s * coalesce(concept_uniqueness, 0)) AS blended_u
+                          FROM cards WHERE oracle_id = %s""",
+                         (w, w, oid)).fetchone()
     if c is None:
         return {"card": None}
     return {"card": card_json(c)}
@@ -924,7 +956,8 @@ def more():
     card_lines, picked = build_lines(card, read_picked())
     weak = request.args.get("weak") == "1"
     blend = read_blend()
-    results, has_more, weak_count = find_similar(card["oracle_id"], picked, read_filters(), read_min(blend), read_sort(), offset,
+    filters = read_filters()
+    results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, read_min(blend), read_sort(), offset,
                                                  weak=weak, blend=BLEND_WEIGHTS[blend])
     return {"results": results, "has_more": has_more, "weak_count": weak_count}
 
@@ -1064,9 +1097,15 @@ def feedback():
             expected_pct = best_sim(conn, card["oracle_id"], expected["oracle_id"], picked)
             if expected_pct is None:
                 return {"ok": False, "stored": False, "msg": expected["name"] + " has no rules text the matcher can search, so it can never appear."}
-            full = conn.execute("""SELECT color_identity, price_usd, cmc, type_line, game_changer, legal_commander
+            full = conn.execute("""SELECT color_identity, price_usd, cmc, type_line, game_changer, legal_commander, oracle_text
                                    FROM cards WHERE oracle_id = %s""", (expected["oracle_id"],)).fetchone()
             reasons = filter_reasons(full, filters)
+            #the filter box is one compiled expression, so the honest check
+            #is asking the database whether this card survives it
+            if filters.get("fq_sql") and not conn.execute(
+                    "SELECT 1 FROM cards c WHERE c.oracle_id = %s AND (" + filters["fq_sql"] + ")",
+                    [expected["oracle_id"]] + filters["fq_params"]).fetchone():
+                reasons.append("your filter query hides it")
             if reasons:
                 return {"ok": True, "stored": False,
                         "msg": expected["name"] + " matches at " + str(expected_pct) + "%, but your filters hide it: " + "; ".join(reasons) + "."}

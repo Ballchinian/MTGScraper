@@ -19,7 +19,7 @@ header {
     margin: 0 auto;
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 30px;
 }
 
 .site-name {
@@ -56,6 +56,11 @@ header {
 }
 
 .search-form button:hover { background: #8a68bb; }
+
+.header-links {
+    display: flex;
+    gap: 30px;
+}
 
 .header-links a {
     color: #cdd8e4;
@@ -265,17 +270,156 @@ h2 {
     margin-top: 2px;
 }
 
+/* edhrec popularity, riding along the price row. muted grey so the price
+   stays the number the eye lands on, and it has a tooltip so the bare
+   number isn't a mystery */
+.result-rank {
+    color: #8a8792;
+    margin-left: 8px;
+    cursor: help;
+}
+
 .match-line {
     color: #6c6874;
     font-size: 12.5px;
     font-style: italic;
     margin-top: 2px;
+    cursor: help; /* it has a hover tooltip, match the concept line's ? cursor */
 }
 
 /* the mechanics <-> concepts slider in the filter bar */
 .blend-slider input[type="range"] {
     width: 100px;
     accent-color: #7857a5;
+}
+
+/* the filter box: scryfall syntax applied to the results. it grows to eat
+   whatever room the bar has left, its the headline control */
+.filter-query {
+    flex: 1;
+    min-width: 260px;
+    padding: 6px 10px;
+    border: 1px solid #d8d5de;
+    border-radius: 4px;
+    font-size: 13.5px;
+    font-family: ui-monospace, Consolas, monospace;
+}
+
+.filter-query:focus {
+    outline: none;
+    border-color: #7857a5;
+}
+
+/* the fold-out extra filters panel. the summary line sits inline with
+   the rest of the filter bar, the open panel drops below it full-width so
+   each control gets room for its explanation */
+.adv-filters {
+    flex-basis: 100%;
+}
+
+.adv-filters summary {
+    cursor: pointer;
+    color: #7857a5;
+    font-size: 14px;
+    width: max-content;
+}
+
+.adv-grid {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 16px;
+    align-items: center;
+}
+
+.adv-row {
+    display: contents;
+}
+
+.adv-row p {
+    margin: 0;
+    font-size: 12.5px;
+    color: #6c6874;
+}
+
+.adv-row code {
+    background: #f0edf5;
+    padding: 0 4px;
+    border-radius: 3px;
+}
+
+/* ---- the /guide page: plain sections plus one annotated demo card ---- */
+
+.guide {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.guide h2 {
+    margin-top: 28px;
+}
+
+.guide code {
+    background: #f0edf5;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* the demo result sits next to a numbered legend. the dots share the site
+   purple so the numbers read as markers, not content */
+.guide-demo {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    margin: 12px 0;
+}
+
+.guide-demo .result {
+    width: 240px;
+    flex-shrink: 0;
+}
+
+.guide-demo .report-flag.guide-static {
+    opacity: 1;
+    pointer-events: none;
+}
+
+/* the transform/rotate/flip control fades in on hover on real pages; the
+   guide pins it visible so the legend has something to point at */
+.guide-demo .card-overlay.guide-static-overlay {
+    opacity: 1;
+    align-items: center;
+}
+
+.guide-demo .guide-static-overlay button { cursor: default; }
+
+.guide-dot {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: #7857a5;
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 18px;
+    text-align: center;
+}
+
+.guide-dot-flag {
+    position: absolute;
+    bottom: 20px
+}
+
+.guide-legend {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.guide-legend li {
+    margin-bottom: 10px;
 }
 
 /* the "min match relaxed while blending" note under the filter bar */

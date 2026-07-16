@@ -37,15 +37,17 @@
             {% if request.args.get('lines') %}
             <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
             {% endif %}
-            {% include "_filters.html" %}
             <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
-            <label class="blend-slider" title="Mechanics: Cards with similar rules text | Concept: Built around the same idea (from community tags)">mechanics <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
+            <label class="blend-slider" title="Rules text: cards whose printed text works the same way | Concepts: cards built around the same idea (from community tags)">rules text <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
             <select name="sort">
                 <option value="best">Best match</option>
                 <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
                 <option value="pricey" {% if request.args.get('sort') == 'pricey' %}selected{% endif %}>Price: high to low</option>
+                <option value="played" {% if request.args.get('sort') == 'played' %}selected{% endif %}>Most played</option>
+                <option value="obscure" {% if request.args.get('sort') == 'obscure' %}selected{% endif %}>Least played</option>
             </select>
             <button type="submit">Apply</button>
+            {% include "_filters.html" %}
         </form>
         {% if min_auto %}
         {# only shows when the relaxed default kicked in, never over a min the
@@ -89,13 +91,13 @@
                 {# the ? in the picture's corner is the misplaced-card report,
                    it fades in with the rest of the hover overlay #}
                 <div class="card-frame{% if r.sideways %} sideways{% endif %}" data-sideways="{{ '1' if r.sideways else '' }}" data-flip="{{ '1' if r.flip else '' }}" data-back="{{ r.image_back }}">
-                    <a href="{{ r.scryfall_uri }}" target="_blank">
+                    <a href="{{ r.scryfall_uri }}" target="_blank" title="opens on scryfall. ctrl-click to search this card here instead">
                         <img src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">
                     </a>
                     <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="shouldn't be here? report this as a bad match">?</button>
                 </div>
-                <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="mechanics {{ r.mech_pct }}% and concept {{ r.concept_pct }}%, blended for your slider position"{% endif %}>{{ r.percent }}%</span></div>
-                {% if r.price %}<div class="result-price">{{ r.price }}</div>{% endif %}
+                <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="rules text {{ r.mech_pct }}% and concept {{ r.concept_pct }}%, blended for your slider position"{% endif %}>{{ r.percent }}%</span></div>
+                {% if r.price or r.rank %}<div class="result-price">{{ r.price }}{% if r.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">{{ r.rank }}</span>{% endif %}</div>{% endif %}
                 {% if r.their_line %}
                 <div class="match-line" title="matches your card's line: {{ r.our_line }}{% if r.matched_back %} (printed on the back face, shown here){% endif %}">"{{ r.their_line }}"</div>
                 {% endif %}
@@ -137,7 +139,7 @@
         /*
             the adaptive min-match default. an untouched min input stays out
             of the query string so the server can pick the default that fits
-            the slider position (80 at pure mechanics, 70 while blending).
+            the slider position (80 at either end, 70 on the mixed detents).
             the keep-it-at-80 button pins the min for the whole session via
             sessionStorage - once locked, min always travels explicitly and
             the server never relaxes it again
@@ -214,11 +216,13 @@
                                 ' data-sideways="' + (r.sideways ? '1' : '') + '"' +
                                 ' data-flip="' + (r.flip ? '1' : '') + '"' +
                                 ' data-back="' + r.image_back + '">' +
-                                '<a href="' + r.scryfall_uri + '" target="_blank">' +
+                                '<a href="' + r.scryfall_uri + '" target="_blank" title="opens on scryfall. ctrl-click to search this card here instead">' +
                                 '<img src="' + r.image + '" alt="" loading="lazy"></a></div>' +
                                 '<div class="result-name">' + r.name + ' <span class="percent' + (r.concept_only ? ' concept' : '') + '">' + r.percent + '%</span></div>';
-                            if (r.price) {
-                                html += '<div class="result-price">' + r.price + '</div>';
+                            if (r.price || r.rank) {
+                                html += '<div class="result-price">' + r.price +
+                                    (r.rank ? '<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">' + r.rank + '</span>' : '') +
+                                    '</div>';
                             }
                             if (r.their_line) {
                                 html += '<div class="match-line">"' + r.their_line + '"</div>';
@@ -248,7 +252,7 @@
                                 tagsDiv.title = "community tags shared with your card" + (r.concept_only ? "" : " - concept match " + r.concept_pct + "%");
                             }
                             if (r.blended) {
-                                div.querySelector(".percent").title = "mechanics " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
+                                div.querySelector(".percent").title = "rules text " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
                             }
                             /*
                                 the report flag is built as an element for the same
@@ -391,6 +395,20 @@
             var flagBtn = e.target.closest(".report-flag");
             if (flagBtn) {
                 openReportBar("misplaced", {id: flagBtn.dataset.id, name: flagBtn.dataset.name, el: flagBtn.closest(".result")});
+            }
+        });
+
+        /*
+            ctrl-click (cmd on mac) on a result's picture searches that card
+            here instead of opening scryfall, for hopping down a rabbit hole
+            without leaving the site. same delegated trick as the flags
+        */
+        document.querySelector(".card-grid").addEventListener("click", function(e) {
+            var link = e.target.closest(".card-frame a");
+            if (link && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                var flag = link.closest(".result").querySelector(".report-flag");
+                window.location = "/search?q=" + encodeURIComponent(flag.dataset.name);
             }
         });
 
