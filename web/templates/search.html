@@ -37,23 +37,34 @@
             {% if request.args.get('lines') %}
             <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
             {% endif %}
-            <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
             <label class="blend-slider" title="Rules text: cards whose printed text works the same way | Concepts: cards built around the same idea (from community tags)">rules text <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
-            <select name="sort">
-                <option value="best">Best match</option>
-                <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
-                <option value="pricey" {% if request.args.get('sort') == 'pricey' %}selected{% endif %}>Price: high to low</option>
-                <option value="played" {% if request.args.get('sort') == 'played' %}selected{% endif %}>Most played</option>
-                <option value="obscure" {% if request.args.get('sort') == 'obscure' %}selected{% endif %}>Least played</option>
-            </select>
-            <button type="submit">Apply</button>
             {% include "_filters.html" %}
+            {# min match, sort and apply ride the extra filters line, out of the
+               filter box's way, where the sort list has room for its options #}
+            <span class="filter-actions">
+                <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
+                <select name="sort">
+                    <option value="best">Best match</option>
+                    <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
+                    <option value="pricey" {% if request.args.get('sort') == 'pricey' %}selected{% endif %}>Price: high to low</option>
+                    <option value="played" {% if request.args.get('sort') == 'played' %}selected{% endif %}>Most played</option>
+                    <option value="obscure" {% if request.args.get('sort') == 'obscure' %}selected{% endif %}>Least played</option>
+                </select>
+                <button type="submit">Apply</button>
+            </span>
         </form>
         {% if min_auto %}
         {# only shows when the relaxed default kicked in, never over a min the
            user chose. the button pins 80 for the whole browser session #}
         <p class="min-note">min match relaxed to {{ min_pct }}% while blending, since blended scores average the two axes.
             <button type="button" id="keep-min">keep it at 80%</button></p>
+        {% endif %}
+        {% if min_override %}
+        {# the way back from a min you set: it beats the default from here on,
+           so say so and offer to drop it. the script hides this one when the
+           session pin is what set it, that case has its own note below #}
+        <p class="min-note" id="min-set-note">min match stays at {{ min_pct }}% because you set it.
+            <button type="button" id="drop-min">back to the default {{ min_default }}%</button></p>
         {% endif %}
 
         <h2>Cards that do something similar
@@ -142,11 +153,17 @@
             the slider position (80 at either end, 70 on the mixed detents).
             the keep-it-at-80 button pins the min for the whole session via
             sessionStorage - once locked, min always travels explicitly and
-            the server never relaxes it again
+            the server never relaxes it again.
+            untouched means the url carries no min yet, not that the box still
+            reads the rendered number: a chosen min gets rendered back as the
+            value, so comparing the two alone would call it untouched and drop
+            it on the next submit. the server agrees, any min in the url is the
+            user's (see min_auto)
         */
         document.querySelector(".filter-bar").addEventListener("submit", function() {
             var minInput = document.querySelector('.filter-bar input[name="min"]');
-            if (!sessionStorage.getItem("minLock") && minInput.value == minInput.defaultValue) {
+            var minChosen = new URLSearchParams(window.location.search).has("min");
+            if (!sessionStorage.getItem("minLock") && !minChosen && minInput.value == minInput.defaultValue) {
                 minInput.disabled = true;  //disabled inputs are left out of the query string
                 setTimeout(function() { minInput.disabled = false; }, 0);
             }
@@ -159,6 +176,24 @@
                 params.set("min", "80");
                 window.location.search = params.toString();
             };
+        }
+        /*
+            the way back from a min you typed: drop it from the url and the
+            server goes back to picking the default. the session pin also puts
+            a min in the url, but it has its own note right below, so this one
+            steps aside rather than saying the same thing twice
+        */
+        var dropMin = document.getElementById("drop-min");
+        if (dropMin) {
+            if (sessionStorage.getItem("minLock")) {
+                document.getElementById("min-set-note").hidden = true;
+            } else {
+                dropMin.onclick = function() {
+                    var params = new URLSearchParams(window.location.search);
+                    params.delete("min");
+                    window.location.search = params.toString();
+                };
+            }
         }
         /*
             the way back from the pin: on blended pages a small note offers

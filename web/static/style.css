@@ -310,11 +310,16 @@ h2 {
     border-color: #7857a5;
 }
 
-/* the fold-out extra filters panel. the summary line sits inline with
-   the rest of the filter bar, the open panel drops below it full-width so
-   each control gets room for its explanation */
+/* the fold-out extra filters panel. the summary line starts its own row of
+   the filter bar, the open panel drops below it so each control gets room
+   for its explanation.
+   the basis is what breaks that row: a whole line minus a slot is always too
+   wide to sit beside the filter box, so the panel wraps, and the slot is what
+   min match, sort and apply need (~385px, rounded up for slack). they land
+   beside it and the panel grows into whatever they leave, back to full width
+   on /unique where there are none */
 .adv-filters {
-    flex-basis: 100%;
+    flex: 1 1 calc(100% - 440px);
 }
 
 .adv-filters summary {
@@ -322,6 +327,15 @@ h2 {
     color: #7857a5;
     font-size: 14px;
     width: max-content;
+}
+
+/* sort and apply, parked at the right end of the extra filters row. they
+   stay level with the summary instead of centering when the panel opens */
+.filter-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    align-self: flex-start;
 }
 
 .adv-grid {

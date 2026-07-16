@@ -403,21 +403,25 @@ def read_number(s):
         return None
 
 
+def default_min(blend):
+    #80 at both ENDS of the slider: pure mechanics pins the model's real
+    #quality boundary there (same set of cards the old raw-90 cutoff kept),
+    #and pure concepts shows the calibrated concept score, where good matches
+    #also read 80+. the mixed detents show an average of two axes though, and
+    #averages rarely reach 80, so they relax to 70
+    return 70 if 0 < blend < len(BLEND_WEIGHTS) - 1 else 80
+
+
 def read_min(blend=0):
-    #minimum match percent, in calibrated display units. 80 by default at
-    #both ENDS of the slider: pure mechanics pins the model's real quality
-    #boundary there (same set of cards the old raw-90 cutoff kept), and pure
-    #concepts shows the calibrated concept score, where good matches also
-    #read 80+. the mixed detents show an average of two axes though, and
-    #averages rarely reach 80, so their DEFAULT relaxes to 70 - only the
-    #default: an explicit min in the url always wins, and the page shows a
-    #note with a keep-it-at-80 button whenever the relaxed one applied.
+    #minimum match percent, in calibrated display units. the relaxing above is
+    #only the DEFAULT: an explicit min in the url always wins, and the page
+    #offers a way back to the default whenever one is overriding it.
     #everything below the line still exists either way, it just pages in
     #behind the "show weaker matches" button instead of being thrown away
     try:
         m = int(request.args.get("min", ""))
     except ValueError:
-        m = 70 if 0 < blend < len(BLEND_WEIGHTS) - 1 else 80
+        m = default_min(blend)
     return max(0, min(m, 100))
 
 
@@ -814,7 +818,11 @@ def search():
     min_pct = read_min(blend)
     #the note with the keep-my-min button only shows when the relaxed
     #default actually kicked in, never over a min the user chose
-    min_auto = 0 < blend < len(BLEND_WEIGHTS) - 1 and request.args.get("min") is None
+    min_default = default_min(blend)
+    min_auto = request.args.get("min") is None and min_default == 70
+    #the mirror image: a chosen min wins over the default from here on, so
+    #when it is not the default anyway, offer the way back to it
+    min_override = request.args.get("min") is not None and min_pct != min_default
     sort = read_sort()
     card_lines, picked = build_lines(card, read_picked())
 
@@ -823,6 +831,7 @@ def search():
     resp = make_response(render_template("search.html", query=query, card=card, card_lines=card_lines,
                                          picked_count=len(picked), results=results, has_more=has_more,
                                          weak_count=weak_count, min_pct=min_pct, min_auto=min_auto,
+                                         min_override=min_override, min_default=min_default,
                                          blend=blend, types=CARD_TYPES))
     #an explicit slider position becomes the remembered one. moving it back
     #to rules text remembers that too, so there is no stuck state
