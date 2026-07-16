@@ -1,29 +1,70 @@
 {# the shared filter controls, included inside a <form> by both /search and
-   /unique so the two pages can never drift apart. each page's form adds its
-   own extras around this (min match and sort on search, the uniqueness bar
-   on unique). state restores from request.args, which is simply empty on
-   pages that drive their filters from javascript instead of reloads #}
-<span class="filter-colors" title="color identity, results must fit inside what you pick">
-    <label class="ci-w"><input type="checkbox" name="colors" value="W" {% if 'W' in request.args.getlist('colors') %}checked{% endif %}>W</label>
-    <label class="ci-u"><input type="checkbox" name="colors" value="U" {% if 'U' in request.args.getlist('colors') %}checked{% endif %}>U</label>
-    <label class="ci-b"><input type="checkbox" name="colors" value="B" {% if 'B' in request.args.getlist('colors') %}checked{% endif %}>B</label>
-    <label class="ci-r"><input type="checkbox" name="colors" value="R" {% if 'R' in request.args.getlist('colors') %}checked{% endif %}>R</label>
-    <label class="ci-g"><input type="checkbox" name="colors" value="G" {% if 'G' in request.args.getlist('colors') %}checked{% endif %}>G</label>
-</span>
-<span class="filter-prices">
-    $ <input type="number" name="pmin" min="0" step="0.01" placeholder="min" value="{{ request.args.get('pmin', '') }}">
-    to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" value="{{ request.args.get('pmax', '') }}">
-</span>
-<span class="filter-prices" title="mana value (converted mana cost)">
-    MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" value="{{ request.args.get('mvmin', '') }}">
-    to <input type="number" name="mvmax" min="0" step="1" placeholder="max" value="{{ request.args.get('mvmax', '') }}">
-</span>
-<select name="type">
-    <option value="">Any type</option>
-    {% for t in types %}
-    <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t }}</option>
-    {% endfor %}
-</select>
-<label title="legendary creatures, cards that can lead a deck"><input type="checkbox" name="cmdr" value="1" {% if request.args.get('cmdr') %}checked{% endif %}>commanders only</label>
-<label><input type="checkbox" name="gc" value="1" {% if request.args.get('gc') %}checked{% endif %}>hide game changers</label>
-<label title="cards that aren't legal in commander (banned etc) are hidden unless this is on"><input type="checkbox" name="illegal" value="1" {% if request.args.get('illegal') %}checked{% endif %}>include illegal</label>
+   /unique so the two pages can never drift apart. the filter box up front
+   takes scryfall style syntax, the widgets live in a fold-out advanced
+   panel behind it, and every widget names its syntax twin, so the panel
+   doubles as the manual.
+   it opens itself whenever any of its filters is active, hidden active
+   filters would look like a broken site. state restores from request.args,
+   which is simply empty on pages that drive their filters from javascript #}
+<input class="filter-query" type="text" name="fq" placeholder='filter: (o:draw or o:scry) -t:creature usd<=5'
+    title="scryfall syntax, applied to the results: o: rules text, t: type, id: color identity, otag: community tags, usd and mv bounds. minus negates anything, or/and and parentheses work. open extra filters below for details"
+    value="{{ request.args.get('fq', '') }}">
+{% set adv_active = request.args.getlist('colors') or request.args.get('pmin') or request.args.get('pmax')
+    or request.args.get('mvmin') or request.args.get('mvmax') or request.args.get('type')
+    or request.args.get('cmdr') or request.args.get('gc') or request.args.get('illegal') %}
+<details class="adv-filters" {% if adv_active %}open{% endif %}>
+    <summary>extra filters</summary>
+    <div class="adv-grid">
+        <div class="adv-row">
+            <span class="filter-colors">
+                <label class="ci-w"><input type="checkbox" name="colors" value="W" {% if 'W' in request.args.getlist('colors') %}checked{% endif %}>W</label>
+                <label class="ci-u"><input type="checkbox" name="colors" value="U" {% if 'U' in request.args.getlist('colors') %}checked{% endif %}>U</label>
+                <label class="ci-b"><input type="checkbox" name="colors" value="B" {% if 'B' in request.args.getlist('colors') %}checked{% endif %}>B</label>
+                <label class="ci-r"><input type="checkbox" name="colors" value="R" {% if 'R' in request.args.getlist('colors') %}checked{% endif %}>R</label>
+                <label class="ci-g"><input type="checkbox" name="colors" value="G" {% if 'G' in request.args.getlist('colors') %}checked{% endif %}>G</label>
+            </span>
+            <p>color identity, fits-within like deckbuilding: tick W and U and only white,
+            blue, white-blue and colorless cards show. in the filter box: <code>id:wu</code> (or <code>-id:rg</code> to ban colors),
+            or <code>id:c</code> for colorless only</p>
+        </div>
+        <div class="adv-row">
+            <span class="filter-prices">
+                $ <input type="number" name="pmin" min="0" step="0.01" placeholder="min" value="{{ request.args.get('pmin', '') }}">
+                to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" value="{{ request.args.get('pmax', '') }}">
+            </span>
+            <p>price bounds in dollars. cards with no listed price are hidden by any price
+            filter. in the filter box: <code>usd&lt;=5</code>, <code>usd&gt;=1</code></p>
+        </div>
+        <div class="adv-row">
+            <span class="filter-prices">
+                MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" value="{{ request.args.get('mvmin', '') }}">
+                to <input type="number" name="mvmax" min="0" step="1" placeholder="max" value="{{ request.args.get('mvmax', '') }}">
+            </span>
+            <p>mana value bounds (converted mana cost). in the filter box:
+            <code>mv&lt;=2</code>, <code>cmc&gt;=4</code>, both spellings work</p>
+        </div>
+        <div class="adv-row">
+            <select name="type">
+                <option value="">Any type</option>
+                {% for t in types %}
+                <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+            </select>
+            <p>the card's type line must contain this. the filter box takes any word, not
+            just the list: <code>t:legendary</code>, <code>t:aura</code>, or <code>-t:creature</code> to exclude one</p>
+        </div>
+        <div class="adv-row">
+            <label><input type="checkbox" name="cmdr" value="1" {% if request.args.get('cmdr') %}checked{% endif %}>commanders only</label>
+            <p>only legendary creatures, the cards that can lead a commander deck</p>
+        </div>
+        <div class="adv-row">
+            <label><input type="checkbox" name="gc" value="1" {% if request.args.get('gc') %}checked{% endif %}>hide game changers</label>
+            <p>hides cards on the official game changer list, for lower-powered brackets</p>
+        </div>
+        <div class="adv-row">
+            <label><input type="checkbox" name="illegal" value="1" {% if request.args.get('illegal') %}checked{% endif %}>include illegal</label>
+            <p>cards that aren't legal in commander (banned and such) stay hidden unless
+            this is on</p>
+        </div>
+    </div>
+</details>

@@ -207,6 +207,167 @@ def sideways(layout, type_line):
     return layout == "split" or "Battle" in (type_line or "")
 
 
+#---- the filter box compiler ----
+#scryfall style syntax with parentheses, or/and and negation, compiled into
+#one sql condition over the cards table:
+#  o:word / o:"a phrase"   rules text contains it       t:creature   type line word
+#  id:wug                  identity fits inside, like deckbuilding. id:c colorless
+#  otag:removal            the community tag, straight from our own daily
+#                          mirror of scryfall's tagger data
+#  is:dfc is:split         card layout. is:gamechanger for the edh watchlist
+#  f:commander             legal in commander. banned:commander for the reverse
+#  usd>=1 eur<5 mv=2       price and mana value, cmc works for mv, eur too
+#  - before anything negates it, words side by side mean and, "or" means or,
+#  parens group: (o:draw or o:scry) -t:creature usd<5
+#anything unrecognisable is skipped, a typo never breaks the search
+
+FQ_TOKEN = re.compile(r"""
+    (?P<paren>[()])
+  | (?P<kw>and|or)(?=[\s()]|$)
+  | (?P<neg>-)
+  | (?P<cfield>usd|price|eur|mv|cmc)\s*(?P<op>>=|<=|=|>|<)\s*(?P<num>\d+(?:\.\d+)?)
+  | (?P<key>[a-z]+):(?:"(?P<qval>[^"]*)"|(?P<val>[^\s()]+))
+  | (?P<junk>[^\s()]+)
+""", re.IGNORECASE | re.VERBOSE)
+
+
+def fq_term(key, value):
+    #one key:value into (sql, params), or None for keys we don't speak (yet)
+    key = key.lower()
+    if key in ("o", "oracle"):
+        return "c.oracle_text ILIKE %s", ["%" + value + "%"]
+    if key in ("t", "type"):
+        return "c.type_line ILIKE %s", ["%" + value + "%"]
+    if key == "id":
+        letters = "".join(ch for ch in value.upper() if ch in "WUBRG")
+        if letters:
+            return "c.color_identity ~ %s", ["^[" + letters + "]*$"]
+        if "C" in value.upper():
+            return "c.color_identity = ''", []
+        return None
+    if key in ("is", "layout"):
+        #only the layout side of scryfall's is:. an unknown value (is:permanent,
+        #is:reserved...) falls through to None and is skipped, never matched to
+        #an empty set, same as any other key we don't speak
+        v = value.lower()
+        if v == "dfc":
+            #a real two-sided card, the layouts that print a back face
+            return "c.layout IN ('transform', 'modal_dfc', 'meld')", []
+        if v in ("mdfc", "modal"):
+            return "c.layout = 'modal_dfc'", []
+        if v == "gamechanger":
+            return "c.game_changer = true", []
+        if v in ("normal", "split", "flip", "transform", "modal_dfc", "meld",
+                 "leveler", "class", "saga", "adventure", "mutate", "prototype",
+                 "battle", "token"):
+            return "c.layout = %s", [v]
+        return None
+    if key in ("f", "format", "legal", "banned"):
+        #commander is the only format whose legality we track
+        if value.lower() in ("commander", "edh"):
+            return "c.legal_commander = " + ("false" if key == "banned" else "true"), []
+        return None
+    if key in ("otag", "tag", "oracletag", "function"):
+        #tagger tags form a hierarchy and the taggings sit on the leaves
+        #(otag:removal itself tags nothing, spot-removal and friends do), so
+        #the match walks the family tree downward, same as scryfall does
+        return ("""EXISTS (SELECT 1 FROM card_tags ct WHERE ct.oracle_id = c.oracle_id AND ct.tag IN (
+                     WITH RECURSIVE fam AS (
+                         SELECT tag FROM tags WHERE tag = %s
+                         UNION
+                         SELECT t.tag FROM tags t JOIN fam f ON f.tag = ANY(t.parents)
+                     ) SELECT tag FROM fam))""", [value.lower()])
+    return None
+
+
+def compile_fq(fq):
+    #tokenize then a little recursive descent. fail-soft on purpose: skipped
+    #tokens and unbalanced parens degrade to a smaller filter, never a 500
+    tokens = []
+    for m in FQ_TOKEN.finditer(fq or ""):
+        if m.group("paren"):
+            tokens.append((m.group("paren"), None))
+        elif m.group("kw"):
+            tokens.append((m.group("kw").lower(), None))
+        elif m.group("neg"):
+            tokens.append(("-", None))
+        elif m.group("cfield"):
+            cf = m.group("cfield").lower()
+            col = {"usd": "c.price_usd", "price": "c.price_usd", "eur": "c.price_eur"}.get(cf, "c.cmc")
+            tokens.append(("term", (col + " " + m.group("op") + " %s", [float(m.group("num"))])))
+        elif m.group("key"):
+            value = m.group("qval") if m.group("qval") is not None else m.group("val")
+            tokens.append(("term", fq_term(m.group("key"), value)))
+        #bare words fall through and are ignored
+    pos = [0]
+
+    def peek():
+        return tokens[pos[0]][0] if pos[0] < len(tokens) else None
+
+    def take():
+        t = tokens[pos[0]]
+        pos[0] += 1
+        return t
+
+    def parse_unary():
+        kind, payload = take()
+        if kind == "-":
+            inner = parse_unary()
+            return ("NOT (" + inner[0] + ")", inner[1]) if inner else None
+        if kind == "(":
+            expr = parse_or()
+            if peek() == ")":
+                take()
+            #keep the user's grouping in the sql, AND binds tighter than OR
+            return ("(" + expr[0] + ")", expr[1]) if expr else None
+        if kind == "term":
+            return payload  #already (sql, params), or None for unknown keys
+        return None  #stray ) or keyword, skip it
+
+    def parse_and():
+        parts = []
+        while peek() not in (None, ")", "or"):
+            if peek() == "and":
+                take()
+                continue
+            unit = parse_unary()
+            if unit:
+                parts.append(unit)
+        if not parts:
+            return None
+        sql = " AND ".join(p[0] for p in parts)
+        return sql, [x for p in parts for x in p[1]]
+
+    def parse_or():
+        parts = []
+        unit = parse_and()
+        if unit:
+            parts.append(unit)
+        while peek() == "or":
+            take()
+            unit = parse_and()
+            if unit:
+                parts.append(unit)
+        if not parts:
+            return None
+        if len(parts) == 1:
+            return parts[0]
+        sql = " OR ".join("(" + p[0] + ")" for p in parts)
+        return sql, [x for p in parts for x in p[1]]
+
+    parts = []
+    while pos[0] < len(tokens):
+        expr = parse_or()
+        if expr:
+            parts.append(expr)
+        elif peek() is not None:
+            take()  #stray token, keep moving
+    if not parts:
+        return None, []
+    sql = " AND ".join("(" + p[0] + ")" for p in parts)
+    return sql, [x for p in parts for x in p[1]]
+
+
 def read_filters():
     f = {}
     #the color checkboxes arrive as repeated params like colors=W&colors=U.
@@ -232,6 +393,9 @@ def read_filters():
     #links with legal=1 wanted exactly what the default now does, so they
     #still mean the same thing
     f["illegal"] = request.args.get("illegal") == "1"
+    #the filter box rides in as fq, compiled here so every page that reads
+    #filters understands it. it stacks with the widgets (both apply)
+    f["fq_sql"], f["fq_params"] = compile_fq(request.args.get("fq", ""))
     return f
 
 
@@ -347,6 +511,10 @@ def filter_sql(filters):
         where += " AND NOT c.game_changer"
     if not filters["illegal"]:
         where += " AND c.legal_commander"
+    if filters.get("fq_sql"):
+        #the compiled filter box, one boolean expression over the cards row
+        where += " AND (" + filters["fq_sql"] + ")"
+        params.extend(filters["fq_params"])
     return where, params
 
 
