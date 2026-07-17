@@ -6,12 +6,14 @@
 import re
 import os
 import math
+import time
 import uuid
 import json
 import hashlib
+from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
-from flask import Flask, render_template, request, redirect, abort, make_response, url_for
+from flask import Flask, render_template, request, redirect, abort, make_response, url_for, Response
 from flask_compress import Compress
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -1472,6 +1474,54 @@ def suggest():
             if row["name"] not in names:  #the odd duplicated name collapses to one entry
                 names.append(row["name"])
     return {"names": names}
+
+
+#---- crawler plumbing: robots.txt and the sitemap ----
+
+#every card's search page is a landing page, but crawlers can only find
+#them by walking result pages link by link. the sitemap hands over the
+#whole list of canonical card urls in one file. the names are cached for a
+#day (they change on the ingest's schedule, not the request's), the xml is
+#rebuilt per request because it embeds whichever host the request came in on
+_sitemap_names = {"names": [], "made": 0.0}
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    now = time.time()
+    if not _sitemap_names["names"] or now - _sitemap_names["made"] > 60 * 60 * 24:
+        with pool.connection() as conn:
+            _sitemap_names["names"] = [r["name"] for r in conn.execute("SELECT name FROM cards ORDER BY name")]
+        _sitemap_names["made"] = now
+    root = request.url_root
+    out = ['<?xml version="1.0" encoding="UTF-8"?>',
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for page in ("", "unique", "guide"):
+        out.append("<url><loc>" + root + page + "</loc></url>")
+    for name in _sitemap_names["names"]:
+        #quote() with its defaults mirrors the urlencode filter building the
+        #canonicals in search.html, so these are the urls the pages declare.
+        #it also percent-encodes every xml-special character, & included, so
+        #the raw name never needs xml escaping
+        out.append("<url><loc>" + root + "search?q=" + quote(name) + "</loc></url>")
+    out.append("</urlset>")
+    #text/xml instead of application/xml so flask-compress gzips it. the
+    #protocol caps one sitemap at 50k urls, the card pool sits well under
+    return Response("\n".join(out), mimetype="text/xml")
+
+
+@app.route("/robots.txt")
+def robots():
+    #the disallows are the json endpoints the pages fetch, nothing a search
+    #result should point at. every human page stays open, and the sitemap
+    #line lets crawlers find the card list without a console submission
+    return Response("\n".join([
+        "User-agent: *",
+        "Disallow: /suggest",
+        "Disallow: /more",
+        "Disallow: /unique/",
+        "Sitemap: " + request.url_root + "sitemap.xml",
+    ]) + "\n", mimetype="text/plain")
 
 
 if __name__ == "__main__":
