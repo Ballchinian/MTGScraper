@@ -26,6 +26,7 @@ import ijson
 from pgvector.psycopg import register_vector
 
 from common.cards import HEADERS, keep_card, split_lines, get_text, get_image, get_back_image
+from common.concept import CALIBRATION as CONCEPT_CALIBRATION
 
 BULK_URL = "https://api.scryfall.com/bulk-data"
 DOWNLOAD_FILE = "oracle-cards.json"
@@ -39,6 +40,22 @@ PRICES_FILE = "default-cards.json"
 EMBED_MODEL = "BallchinianMan/mtg-tuned-embeddinggemma-300m"
 EMBED_PROMPT = "task: sentence similarity | query: "
 EMBED_DIMS = 768
+
+#axis 1's calibration map: raw cosine -> the percent the site shows,
+#piecewise linear through hand-judged pairs. raw cosine is arbitrary per
+#model, so this map is ANCHORED TO THE MODEL ABOVE and lives right next to
+#it - swapping models means re-judging these anchors along with rebuilding
+#the vectors. the load-bearing anchor is 0.895 -> 80: the quality boundary
+#the old raw-90 cutoff actually guarded (int(round()) let 89.5 through) now
+#reads as 80 and exactly the same set of cards passes. identical text stays
+#100 (nothing that isn't identical may show 100), the flagship match
+#(rhystic/remora, raw .97) lands low 90s, and the "same shell, different
+#payload" band (raw ~.85) drops visibly under the gate.
+#
+#both maps ride to the website through the meta table (written in main
+#below, next to the model name they belong to), so the site and the
+#pipeline can never disagree about what a percent means
+MECH_CALIBRATION = [(0.0, 0), (0.50, 30), (0.70, 45), (0.85, 65), (0.895, 80), (0.97, 92), (1.0, 100)]
 
 
 def get_with_retries(url, tries=3):
@@ -234,6 +251,18 @@ def main():
         conn.execute(f.read())
     conn.commit()
     register_vector(conn)
+
+    #the calibration maps go into meta before the gate below, so even a
+    #nothing-changed run leaves them in place for the website to read. the
+    #site carries seed copies but the database's word wins, which is what
+    #keeps a model swap atomic: new vectors and their new map arrive together
+    for key, cal in (("mech_calibration", MECH_CALIBRATION),
+                     ("concept_calibration", CONCEPT_CALIBRATION)):
+        conn.execute("""
+            INSERT INTO meta (key, value) VALUES (%s, %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """, (key, json.dumps(cal)))
+    conn.commit()
 
     #vectors from two different models cant be compared with each other, so
     #if the database was embedded by anything other than the model above,

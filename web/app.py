@@ -92,11 +92,16 @@ def line_weight(count):
     return 1.0 / (1.0 + math.log10(count / 5.0))
 
 
-#copied from common/concept.py because railway only deploys the web folder,
-#same story as clean_line. axis 2: how conceptually close two cards are,
-#scored from the community tags the ingest bakes into card_tags/tags. the
-#raw cosine lives in a compressed band, this map turns it into the percent
-#the site shows, and the gate is written in displayed units on purpose
+#axis 2: how conceptually close two cards are, scored from the community
+#tags the ingest bakes into card_tags/tags. the raw cosine lives in a
+#compressed band, this map turns it into the percent the site shows, and
+#the gate is written in displayed units on purpose.
+#
+#this and MECH_CALIBRATION below are SEEDS: the ingest writes the real maps
+#into meta next to the model name they're anchored to, and load_calibration
+#(further down, once both are defined) makes the database's word win. these
+#only hold until the first ingest run against a database, and a model swap
+#carries its new map along with its new vectors automatically
 CALIBRATION = [(0.0, 0), (0.10, 35), (0.22, 55), (0.35, 70), (0.55, 82), (0.68, 90), (1.0, 100)]
 MIN_CONCEPT = 80
 
@@ -119,16 +124,35 @@ def concept_raw_gate(pct):
 
 
 #the mechanical axis wears a calibration map too, same shape as the concept
-#one. raw cosine is arbitrary per model (this map is anchored to the tuned
-#embeddinggemma the ingest embeds with - swapping models means re-anchoring),
-#so the displayed percent is pinned to judged pairs instead. the load-bearing
-#anchor is 0.895 -> 80: the quality boundary the old raw-90 cutoff actually
-#guarded (int(round()) let 89.5 through) now READS as 80 and exactly the
-#same set of cards passes. identical text stays 100 (nothing that isn't
-#identical may show 100), the flagship match (rhystic/remora, raw .97) lands
-#low 90s, and the "same shell, different payload" band (raw ~.85) drops
-#visibly under the gate
+#one. raw cosine is arbitrary per model, so the displayed percent is pinned
+#to judged pairs instead. the map is anchored to the tuned embeddinggemma
+#the ingest embeds with, and the full story of the anchors lives next to
+#EMBED_MODEL in ingest/update.py, which is the source of truth that lands
+#in meta. this copy is the seed for databases the ingest hasn't touched yet
 MECH_CALIBRATION = [(0.0, 0), (0.50, 30), (0.70, 45), (0.85, 65), (0.895, 80), (0.97, 92), (1.0, 100)]
+
+
+def load_calibration():
+    #the maps the ingest wrote into meta replace the seeds above, so the
+    #percents the site shows always belong to the model that made the
+    #vectors. a database the ingest has never run against has no meta rows
+    #(maybe no meta table), then the seeds hold
+    global CALIBRATION, MECH_CALIBRATION
+    try:
+        with pool.connection() as conn:
+            for key in ("concept_calibration", "mech_calibration"):
+                row = conn.execute("SELECT value FROM meta WHERE key = %s", (key,)).fetchone()
+                if row:
+                    pts = [(float(x), float(y)) for x, y in json.loads(row["value"])]
+                    if key == "concept_calibration":
+                        CALIBRATION = pts
+                    else:
+                        MECH_CALIBRATION = pts
+    except Exception:
+        pass
+
+
+load_calibration()
 
 
 def mech_display(raw):
