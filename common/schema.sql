@@ -111,10 +111,16 @@ ALTER TABLE lines ADD COLUMN IF NOT EXISTS whole boolean NOT NULL DEFAULT false;
 --lets us grab one card's lines instantly at search time
 CREATE INDEX IF NOT EXISTS lines_oracle_id ON lines (oracle_id);
 
---no vector index on purpose! at ~61k rows postgres scans them all in a few
---milliseconds and the results are exact, identical to the old numpy version.
---if the table ever grows 10x, uncomment this for approximate-but-fast search:
---CREATE INDEX lines_embedding_hnsw ON lines USING hnsw (embedding vector_cosine_ops);
+--approximate index for the search's nearest neighbor scans, ~20ms per line
+--where the exact scan measured 200-250ms. the dense build parameters are
+--load bearing: common lines put hundreds of identical embeddings in the
+--graph, and the default m=16/ef_construction=64 build leaves those clusters
+--badly connected (a 94% match at true rank 181 fell out of a top-400 scan).
+--m=32/ef_construction=200 measured zero misses above 0.90 sim against the
+--exact scan. partial on NOT whole to mirror the search's filter, so
+--whole-card rows never enter the graph. scan settings live in web/db.py,
+--uniqueness is unaffected, recompute_uniqueness does its math in numpy
+CREATE INDEX IF NOT EXISTS lines_embedding_hnsw ON lines USING hnsw (embedding vector_cosine_ops) WITH (m = 32, ef_construction = 200) WHERE (NOT whole);
 
 --how many cards share each exact line of text, for the idf weighting
 --("Flying" is on thousands of cards so it barely counts, a wordy triggered

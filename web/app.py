@@ -659,26 +659,27 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             qlines = chosen
 
     def hunt(ql):
-        #one line's nearest neighbor scan, ~200ms of pgvector math each.
-        #<=> is cosine distance, so similarity is 1 minus it. grab way more
-        #than we need since a bunch will get merged per card.
+        #one line's nearest neighbor walk through the hnsw index, ~10-20ms
+        #where the exact scan it replaced measured 200-250ms. <=> is cosine
+        #distance, so similarity is 1 minus it. grab way more than we need
+        #since a bunch will get merged per card.
         #
         #one query per line on purpose. the obvious "one big query" (the
         #anchor's lines CROSS JOIN LATERAL the scan) was built and measured
         #at 2.3x SLOWER: with the anchor embedding as a lateral outer column
         #postgres re-detoasts the ~3kb vector for every one of the 61k
-        #distance evaluations, while a bound parameter gets detoasted once
-        #the l.id tiebreak makes the 400 cut deterministic: hundreds of
-        #cards can sit at exactly the same distance (identical common
-        #lines), and without a total order postgres hands back an arbitrary
-        #subset of the tie that changes run to run, so the deep end of the
-        #results could shuffle between a page load and its load-more
+        #distance evaluations, while a bound parameter gets detoasted once.
+        #
+        #no l.id tiebreak on the ORDER BY: a second sort key pushes the
+        #planner off the index and back onto the full scan. the 400 cut
+        #stays deterministic anyway, walking an unchanged graph returns the
+        #same rows in the same order, and only the ingest changes the graph
         with pool.connection() as c:
             return c.execute("""
                 SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, """ + pcol + """ AS price, c.edhrec_rank
                 FROM lines l JOIN cards c ON c.oracle_id = l.oracle_id
                 WHERE l.oracle_id <> %s AND NOT l.whole""" + where + """
-                ORDER BY l.embedding <=> %s, l.id
+                ORDER BY l.embedding <=> %s
                 LIMIT 400
             """, [ql["embedding"], oracle_id] + fparams + [ql["embedding"]]).fetchall()
 

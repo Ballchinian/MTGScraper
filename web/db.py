@@ -11,6 +11,11 @@ from pgvector.psycopg import register_vector
 
 def setup(conn):
     register_vector(conn)
+    #hnsw scan settings for the search. ef_search doubles as the scan's
+    #result cap so it must cover the LIMIT 400, and the iterative scan
+    #keeps walking the graph in order when filters discard candidates
+    conn.execute("SET hnsw.ef_search = 400")
+    conn.execute("SET hnsw.iterative_scan = 'strict_order'")
     conn.commit()  #the type lookup opens a transaction, close it or the pool complains
 
 
