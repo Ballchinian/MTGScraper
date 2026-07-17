@@ -165,23 +165,28 @@ def concept_between(conn, oracle_a, oracle_b):
 
 
 def find_card(query):
+    #one query instead of up to four round trips: every way a name can match
+    #(exact, starts-with, anywhere, trigram-fuzzy) becomes a tier and the
+    #best-tiered card wins. inside the substring tiers alphabetical order
+    #decides (trigram closeness would favor short names, "delver" must find
+    #Delver of Secrets, not Delver's Torch), the fuzzy tier goes closest
+    #first - its alphabetical CASE key is NULL, which sorts after every real
+    #name. the % operator means "similar enough to bother" (so garbage
+    #queries still return nothing) and <-> sorts by closest. %% because
+    #psycopg uses % for parameters
     q = query.strip()
     with pool.connection() as conn:
-        #exact match first, then startswith, then anywhere in the name
-        row = conn.execute("SELECT " + CARD_FIELDS + " FROM cards WHERE lower(name) = lower(%s)", (q,)).fetchone()
-        if row:
-            return row
-        row = conn.execute("SELECT " + CARD_FIELDS + " FROM cards WHERE name ILIKE %s ORDER BY name LIMIT 1", (q + "%",)).fetchone()
-        if row:
-            return row
-        row = conn.execute("SELECT " + CARD_FIELDS + " FROM cards WHERE name ILIKE %s ORDER BY name LIMIT 1", ("%" + q + "%",)).fetchone()
-        if row:
-            return row
-        #last resort, trigrams catch close spellings like "lightnig bolt".
-        #the % operator means "similar enough to bother" (so garbage queries
-        #still return nothing) and <-> sorts by closest. %% because psycopg
-        #uses % for parameters
-        return conn.execute("SELECT " + CARD_FIELDS + " FROM cards WHERE name %% %s ORDER BY name <-> %s LIMIT 1", (q, q)).fetchone()
+        return conn.execute("""
+            SELECT """ + CARD_FIELDS + """,
+                   CASE WHEN lower(name) = lower(%s) THEN 0
+                        WHEN name ILIKE %s THEN 1
+                        WHEN name ILIKE %s THEN 2
+                        ELSE 3 END AS tier
+            FROM cards
+            WHERE lower(name) = lower(%s) OR name ILIKE %s OR name ILIKE %s OR name %% %s
+            ORDER BY tier, CASE WHEN name ILIKE %s THEN name END, name <-> %s, name
+            LIMIT 1
+        """, (q, q + "%", "%" + q + "%", q, q + "%", "%" + q + "%", q, "%" + q + "%", q)).fetchone()
 
 
 #all the url params past q and offset live in these little readers. home()
@@ -581,7 +586,15 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
     pcol = "c.price_usd" if currency == "usd" else "c.price_eur"
     with pool.connection() as conn:
         #the query card's lines are already embedded in the database, so the
-        #model never runs at search time. grab them with their idf counts in one go
+        #model never runs at search time. grab them with their idf counts in one go.
+        #
+        #one query per line on purpose. the obvious "one big query" (the
+        #anchor's lines CROSS JOIN LATERAL the nearest-neighbor scan) was
+        #built and measured at 2.3x SLOWER: with the anchor embedding as a
+        #lateral outer column postgres re-detoasts the ~3kb vector for every
+        #one of the 61k distance evaluations, while a bound parameter gets
+        #detoasted once. the round trips this loop spends are ~1ms each on
+        #railway's private network, noise next to that
         qlines = conn.execute("""
             SELECT l.line_text, l.embedding, coalesce(s.count, 1) AS count
             FROM lines l LEFT JOIN line_stats s ON s.line_text = l.line_text
@@ -1354,29 +1367,30 @@ def admin_act():
 
 #the search bar calls this while you type to fill the suggestion dropdown.
 #names that start with what you typed come first, then names with it anywhere,
-#then trigram matches to catch typos
+#then trigram matches to catch typos. one query, tiered like find_card: the
+#substring tiers read alphabetically, the fuzzy tier closest-first (its
+#alphabetical CASE key is NULL, which sorts after every real name). this is
+#the hottest route on the site, it fires on every pause in typing
 @app.route("/suggest")
 def suggest():
     q = request.args.get("q", "").strip()
     if len(q) < 2:
         return {"names": []}
+    p, s = q + "%", "%" + q + "%"
     names = []
     with pool.connection() as conn:
-        for row in conn.execute("SELECT name FROM cards WHERE name ILIKE %s ORDER BY name LIMIT 8", (q + "%",)):
-            names.append(row["name"])
-        if len(names) < 8:
-            for row in conn.execute("SELECT name FROM cards WHERE name ILIKE %s ORDER BY name LIMIT 8", ("%" + q + "%",)):
-                if row["name"] not in names:
-                    names.append(row["name"])
-                    if len(names) == 8:
-                        break
-        #if substring matching didnt fill the list, fuzzy matching tops it up
-        if len(names) < 8:
-            for row in conn.execute("SELECT name FROM cards WHERE name %% %s ORDER BY name <-> %s LIMIT 8", (q, q)):
-                if row["name"] not in names:
-                    names.append(row["name"])
-                    if len(names) == 8:
-                        break
+        for row in conn.execute("""
+            SELECT name,
+                   CASE WHEN name ILIKE %s THEN 0
+                        WHEN name ILIKE %s THEN 1
+                        ELSE 2 END AS tier
+            FROM cards
+            WHERE name ILIKE %s OR name ILIKE %s OR name %% %s
+            ORDER BY tier, CASE WHEN name ILIKE %s THEN name END, name <-> %s, name
+            LIMIT 8
+        """, (p, s, p, s, q, s, q)):
+            if row["name"] not in names:  #the odd duplicated name collapses to one entry
+                names.append(row["name"])
     return {"names": names}
 
 
