@@ -168,6 +168,12 @@
                 setTimeout(function() { minInput.disabled = false; }, 0);
             }
         });
+        //the currency switch applies itself, waiting behind the Apply button
+        //would make the toggle look dead. requestSubmit rather than submit
+        //so the min-dropping handler above still gets its say
+        document.querySelector('.filter-bar select[name="cur"]').onchange = function() {
+            this.form.requestSubmit();
+        };
         var keepMin = document.getElementById("keep-min");
         if (keepMin) {
             keepMin.onclick = function() {

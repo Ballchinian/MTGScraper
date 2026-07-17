@@ -149,7 +149,7 @@ function showAt(i) {
         statusEl.textContent = trail;
         return;
     }
-    fetch("/unique/card?id=" + id)
+    fetch("/unique/card?id=" + id + "&cur=" + form.elements.cur.value)
         .then(function(r) { return r.json(); })
         .then(function(data) {
             if (data.card) {
@@ -178,6 +178,16 @@ cardBox.addEventListener("click", function(e) {
 
 backBtn.onclick = function() { if (pos > 0) { showAt(pos - 1); } };
 fwdBtn.onclick = function() { if (pos < seen.length - 1) { showAt(pos + 1); } };
+
+//flipping the currency repaints the card on screen with the other price.
+//the cache holds server-formatted price strings, so it empties and the
+//current trail entry refetches in the new currency
+form.elements.cur.onchange = function() {
+    cache = {};
+    if (pos >= 0) {
+        showAt(pos);
+    }
+};
 
 var dealing = false;
 function dealOne() {

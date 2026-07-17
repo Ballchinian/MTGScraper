@@ -49,7 +49,7 @@ with pool.connection() as _conn:
 ADMIN_KEY = os.environ.get("ADMIN_KEY", "")
 
 #the display columns the frontend needs, so every query grabs the same set
-CARD_FIELDS = "oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, price_usd, layout, image_back, edhrec_rank"
+CARD_FIELDS = "oracle_id, name, mana_cost, type_line, oracle_text, image, scryfall_uri, price_usd, price_eur, layout, image_back, edhrec_rank"
 
 #the choices in the type filter dropdown. also acts as a whitelist so
 #nothing weird from the url ends up inside a LIKE pattern
@@ -195,6 +195,15 @@ def rank_label(rank):
     return "#" + str(rank) if rank is not None else ""
 
 
+def price_label(c, currency):
+    #the price string under a card, in whichever currency the toggle picked.
+    #empty when the card has no price in that currency
+    p = c["price_usd"] if currency == "usd" else c["price_eur"]
+    if p is None:
+        return ""
+    return ("$" if currency == "usd" else "€") + str(p)
+
+
 def sideways(layout, type_line):
     #battles and split cards are printed sideways, so their frames offer the
     #rotate button. battles dont get their own layout from scryfall (theyre
@@ -211,7 +220,8 @@ def sideways(layout, type_line):
 #                          mirror of scryfall's tagger data
 #  is:dfc is:split         card layout. is:gamechanger for the edh watchlist
 #  f:commander             legal in commander. banned:commander for the reverse
-#  usd>=1 eur<5 mv=2       price and mana value, cmc works for mv, eur too
+#  usd>=1 eur<5 mv=2       price and mana value, cmc works for mv, eur too,
+#                          and a bare price<5 follows the currency toggle
 #  - before anything negates it, words side by side mean and, "or" means or,
 #  parens group: (o:draw or o:scry) -t:creature usd<5
 #anything unrecognisable is skipped, a typo never breaks the search
@@ -275,7 +285,7 @@ def fq_term(key, value):
     return None
 
 
-def compile_fq(fq):
+def compile_fq(fq, currency="usd"):
     #tokenize then a little recursive descent. fail-soft on purpose: skipped
     #tokens and unbalanced parens degrade to a smaller filter, never a 500
     tokens = []
@@ -288,7 +298,10 @@ def compile_fq(fq):
             tokens.append(("-", None))
         elif m.group("cfield"):
             cf = m.group("cfield").lower()
-            col = {"usd": "c.price_usd", "price": "c.price_usd", "eur": "c.price_eur"}.get(cf, "c.cmc")
+            #usd and eur always mean themselves, the bare word price follows
+            #the currency toggle
+            cur_col = "c.price_usd" if currency == "usd" else "c.price_eur"
+            col = {"usd": "c.price_usd", "eur": "c.price_eur", "price": cur_col}.get(cf, "c.cmc")
             tokens.append(("term", (col + " " + m.group("op") + " %s", [float(m.group("num"))])))
         elif m.group("key"):
             value = m.group("qval") if m.group("qval") is not None else m.group("val")
@@ -388,9 +401,11 @@ def read_filters():
     #links with legal=1 wanted exactly what the default now does, so they
     #still mean the same thing
     f["illegal"] = request.args.get("illegal") == "1"
+    #which currency the price bounds (and the filter box's bare price) mean
+    f["cur"] = read_currency()
     #the filter box rides in as fq, compiled here so every page that reads
     #filters understands it. it stacks with the widgets (both apply)
-    f["fq_sql"], f["fq_params"] = compile_fq(request.args.get("fq", ""))
+    f["fq_sql"], f["fq_params"] = compile_fq(request.args.get("fq", ""), f["cur"])
     return f
 
 
@@ -430,6 +445,27 @@ def read_sort():
     if s not in ("cheap", "pricey", "played", "obscure"):
         s = "best"
     return s
+
+
+def read_currency():
+    #usd or eur, for every price the site shows, filters and sorts on. the
+    #url wins, then the remembered cookie, then dollars. scryfall only
+    #prices those two currencies, so thats the whole menu
+    cur = request.args.get("cur")
+    if cur is None:
+        cur = request.cookies.get("cur", "usd")
+    return cur if cur in ("usd", "eur") else "usd"
+
+
+@app.after_request
+def remember_currency(resp):
+    #any request that names a currency makes it the remembered one, so the
+    #toggle sticks no matter which page it was flipped on (/search submits
+    #its form, /unique deals and trail-walks through fetch)
+    cur = request.args.get("cur")
+    if cur in ("usd", "eur"):
+        resp.set_cookie("cur", cur, max_age=60 * 60 * 24 * 365, samesite="Lax")
+    return resp
 
 
 def read_blend():
@@ -488,13 +524,16 @@ def filter_sql(filters):
         #build into a regex because read_filters only lets WUBRG through
         where += " AND c.color_identity ~ %s"
         params.append("^[" + filters["colors"] + "]*$")
+    #the bounds compare in whichever currency the toggle shows, so what you
+    #filter on is always the number printed under the cards
+    pcol = "c.price_usd" if filters.get("cur", "usd") == "usd" else "c.price_eur"
     if filters["pmin"] is not None:
-        where += " AND c.price_usd >= %s"
+        where += " AND " + pcol + " >= %s"
         params.append(filters["pmin"])
     if filters["pmax"] is not None:
         #cards with no known price fail both comparisons, so any price filter
         #quietly drops them, which is what a budget search wants
-        where += " AND c.price_usd <= %s"
+        where += " AND " + pcol + " <= %s"
         params.append(filters["pmax"])
     if filters["mvmin"] is not None:
         where += " AND c.cmc >= %s"
@@ -523,7 +562,7 @@ def filter_sql(filters):
     return where, params
 
 
-def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=20, weak=False, blend=0.0):
+def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=20, weak=False, blend=0.0, currency="usd"):
     #every candidate card keeps all its matching line pairs now instead of
     #just the best one, so results can show "+2 more matching lines".
     #
@@ -531,9 +570,11 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
     #results, the weak ones sit behind the "show weaker matches" button.
     #weak=True means the caller is paging through that second tier
     pairs_by_card = {}  #other card's oracle_id -> list of (weighted score, real similarity, our line, their line)
-    prices = {}         #other card's oracle_id -> usd price, for the price sorts
+    prices = {}         #other card's oracle_id -> price in the chosen currency, for the price sorts
     ranks = {}          #other card's oracle_id -> edhrec rank, for the played sorts
     where, fparams = filter_sql(filters)
+    #the column the price sorts read, matching the currency the page prints
+    pcol = "c.price_usd" if currency == "usd" else "c.price_eur"
     with pool.connection() as conn:
         #the query card's lines are already embedded in the database, so the
         #model never runs at search time. grab them with their idf counts in one go
@@ -557,7 +598,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             #<=> is pgvector's cosine distance, so similarity is 1 minus it.
             #grab way more than we need since a bunch will get merged per card
             matches = conn.execute("""
-                SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, c.price_usd, c.edhrec_rank
+                SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, """ + pcol + """ AS price, c.edhrec_rank
                 FROM lines l JOIN cards c ON c.oracle_id = l.oracle_id
                 WHERE l.oracle_id <> %s AND NOT l.whole""" + where + """
                 ORDER BY l.embedding <=> %s
@@ -567,7 +608,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                 if m["oracle_id"] not in pairs_by_card:
                     pairs_by_card[m["oracle_id"]] = []
                 pairs_by_card[m["oracle_id"]].append((m["sim"] * w, m["sim"], ql["line_text"], m["line_text"], m["face"]))
-                prices[m["oracle_id"]] = m["price_usd"]
+                prices[m["oracle_id"]] = m["price"]
                 ranks[m["oracle_id"]] = m["edhrec_rank"]
 
         #sort each card's pairs so pairs[0] is its best one, then rank the
@@ -593,7 +634,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                     JOIN tags t ON t.tag = ct.tag
                     WHERE ct.oracle_id = %s
                 )
-                SELECT ct.oracle_id, c.price_usd, c.edhrec_rank,
+                SELECT ct.oracle_id, """ + pcol + """ AS price, c.edhrec_rank,
                        sum(a.idf * a.idf) / (na.norm * nc.norm) AS raw
                 FROM card_tags ct
                 JOIN anchor a ON a.tag = ct.tag
@@ -601,14 +642,14 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                 JOIN card_tag_norms nc ON nc.oracle_id = ct.oracle_id
                 JOIN card_tag_norms na ON na.oracle_id = %s
                 WHERE ct.oracle_id <> %s""" + where + """
-                GROUP BY ct.oracle_id, c.price_usd, c.edhrec_rank, na.norm, nc.norm
+                GROUP BY ct.oracle_id, """ + pcol + """, c.edhrec_rank, na.norm, nc.norm
                 HAVING sum(a.idf * a.idf) / (na.norm * nc.norm) >= %s
                 ORDER BY raw DESC
                 LIMIT 300
             """, [oracle_id, oracle_id, oracle_id] + fparams + [concept_raw_gate(min_pct)]).fetchall()
             for r in rows:
                 concept_raw[r["oracle_id"]] = r["raw"]
-                prices.setdefault(r["oracle_id"], r["price_usd"])
+                prices.setdefault(r["oracle_id"], r["price"])
                 ranks.setdefault(r["oracle_id"], r["edhrec_rank"])
 
             #every mechanical candidate needs its concept score too, the
@@ -749,9 +790,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             percent = int(round((1 - blend) * mech_pct + blend * concept_pct))
         else:
             percent = mech_pct
-        price = ""
-        if c["price_usd"] is not None:
-            price = "$" + str(c["price_usd"])
+        price = price_label(c, currency)
         #a match that lives on the back face shows that side first, so the
         #line printed under the card is on the picture the user is looking
         #at (the ulvenwald lesson). the front face keeps the flip button
@@ -827,12 +866,12 @@ def search():
     card_lines, picked = build_lines(card, read_picked())
 
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, min_pct, sort,
-                                                 blend=BLEND_WEIGHTS[blend])
+                                                 blend=BLEND_WEIGHTS[blend], currency=filters["cur"])
     resp = make_response(render_template("search.html", query=query, card=card, card_lines=card_lines,
                                          picked_count=len(picked), results=results, has_more=has_more,
                                          weak_count=weak_count, min_pct=min_pct, min_auto=min_auto,
                                          min_override=min_override, min_default=min_default,
-                                         blend=blend, types=CARD_TYPES))
+                                         blend=blend, cur=filters["cur"], types=CARD_TYPES))
     #an explicit slider position becomes the remembered one. moving it back
     #to rules text remembers that too, so there is no stuck state
     if request.args.get("blend") is not None:
@@ -852,16 +891,14 @@ def guide():
 
 @app.route("/unique")
 def unique():
-    return render_template("unique.html", types=CARD_TYPES, blend=read_blend())
+    return render_template("unique.html", types=CARD_TYPES, blend=read_blend(), cur=read_currency())
 
 
-def card_json(c):
+def card_json(c, currency):
     #one dealt (or revisited) card the way the /unique frontend wants it.
     #layout and image_back are what let the page offer the rotate and
     #turn-over buttons
-    price = ""
-    if c["price_usd"] is not None:
-        price = "$" + str(c["price_usd"])
+    price = price_label(c, currency)
     return {
         "oracle_id": str(c["oracle_id"]),
         "name": c["name"],
@@ -922,8 +959,9 @@ def unique_cards():
                             [w, w] + params + [UNIQUE_PAGE]).fetchall()
 
     cards = []
+    cur = read_currency()
     for c in rows:
-        cards.append(card_json(c))
+        cards.append(card_json(c, cur))
     #remaining counts whats left AFTER this deal, so the frontend knows when
     #the well is dry without another request
     return {"cards": cards, "remaining": remaining - len(cards)}
@@ -950,7 +988,7 @@ def unique_card():
                          (w, w, oid)).fetchone()
     if c is None:
         return {"card": None}
-    return {"card": card_json(c)}
+    return {"card": card_json(c, read_currency())}
 
 
 #the load more button on the results page calls this and gets json back. it
@@ -967,7 +1005,7 @@ def more():
     blend = read_blend()
     filters = read_filters()
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, read_min(blend), read_sort(), offset,
-                                                 weak=weak, blend=BLEND_WEIGHTS[blend])
+                                                 weak=weak, blend=BLEND_WEIGHTS[blend], currency=filters["cur"])
     return {"results": results, "has_more": has_more, "weak_count": weak_count}
 
 
@@ -1021,12 +1059,16 @@ def filter_reasons(card, filters):
             if letter not in filters["colors"]:
                 reasons.append("its color identity (" + card["color_identity"] + ") doesn't fit the colors you picked")
                 break
-    if (filters["pmin"] is not None or filters["pmax"] is not None) and card["price_usd"] is None:
+    #the same currency the bounds filtered on, so the number quoted back is
+    #the one the user was comparing against
+    pkey = "price_usd" if filters.get("cur", "usd") == "usd" else "price_eur"
+    sign = "$" if pkey == "price_usd" else "€"
+    if (filters["pmin"] is not None or filters["pmax"] is not None) and card[pkey] is None:
         reasons.append("it has no listed price, and any price filter hides unpriced cards")
-    elif filters["pmin"] is not None and float(card["price_usd"]) < filters["pmin"]:
-        reasons.append("its price ($" + str(card["price_usd"]) + ") is under your minimum")
-    elif filters["pmax"] is not None and float(card["price_usd"]) > filters["pmax"]:
-        reasons.append("its price ($" + str(card["price_usd"]) + ") is over your maximum")
+    elif filters["pmin"] is not None and float(card[pkey]) < filters["pmin"]:
+        reasons.append("its price (" + sign + str(card[pkey]) + ") is under your minimum")
+    elif filters["pmax"] is not None and float(card[pkey]) > filters["pmax"]:
+        reasons.append("its price (" + sign + str(card[pkey]) + ") is over your maximum")
     if filters["mvmin"] is not None and float(card["cmc"]) < filters["mvmin"]:
         reasons.append("its mana value (" + str(card["cmc"]) + ") is under your minimum")
     if filters["mvmax"] is not None and float(card["cmc"]) > filters["mvmax"]:
@@ -1106,7 +1148,7 @@ def feedback():
             expected_pct = best_sim(conn, card["oracle_id"], expected["oracle_id"], picked)
             if expected_pct is None:
                 return {"ok": False, "stored": False, "msg": expected["name"] + " has no rules text the matcher can search, so it can never appear."}
-            full = conn.execute("""SELECT color_identity, price_usd, cmc, type_line, game_changer, legal_commander, oracle_text
+            full = conn.execute("""SELECT color_identity, price_usd, price_eur, cmc, type_line, game_changer, legal_commander, oracle_text
                                    FROM cards WHERE oracle_id = %s""", (expected["oracle_id"],)).fetchone()
             reasons = filter_reasons(full, filters)
             #the filter box is one compiled expression, so the honest check

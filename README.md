@@ -10,7 +10,7 @@ A web app that finds Magic: The Gathering cards that do similar things to the ca
 - Line picker: click any of the searched card's rules lines to search just that ability (or combine several), and the URL stays shareable
 - Filters: color identity (fits-within, like deckbuilding), price range, mana value range, card type, commanders only (legendary creatures), hide game changers, and cards that aren't commander legal stay hidden unless you tick "include illegal"
 - Results below 90% match (adjustable in the filter bar) wait behind a "show weaker matches" button at the end of the list, so weak coincidences never crowd out real matches but nothing is unreachable
-- Sort by best match or by price, with prices refreshed from Scryfall daily
+- Sort by best match or by price, in dollars or euros, with prices refreshed from Scryfall daily
 - Results that match several of your card's lines say so ("+2 more matching lines")
 - Load more button that pulls the next 20 results without a page reload
 - Scryfall styled interface with card images linking back to Scryfall
@@ -41,7 +41,7 @@ Five tables. `cards` has one row per unique card, keyed by Scryfall's `oracle_id
 
 Two derived columns power the unique cards page: `lines.nn_sim` is each line's nearest neighbor similarity (how close the closest line on any *other* card gets), and `cards.uniqueness` rolls that up as 1 minus the card's most isolated line's `nn_sim`, so a card with Flying plus one ability nobody else has still counts as unique, because uniqueness is judged per line, not by the card's best match. The ingest recomputes them whenever lines change, from scratch rather than incrementally: a new card can make an old card less unique and a deleted card can make its old neighbors more unique, so patching only changed rows would quietly rot the scores. The all-pairs math runs as one big numpy matrix multiply on the GitHub Actions runner (about a minute) instead of ~31k pgvector scans (hours of busy production database). All-pairs work belongs next to the big CPU, one-query-at-a-time work belongs next to the data.
 
-The EUR price is stored but not shown anywhere yet, it is sitting there for a future currency toggle. Prices are the cheapest paper printing in any finish, found by streaming Scryfall's Default Cards file (every printing, a couple of gigabytes) through ijson each day. Digital printings, oversized promos and gold border world championship decks don't count, you can't sleeve those up.
+Prices show in dollars or euros: a switch in the extra filters panel flips every price on the page, and the price bounds and price sorts follow it, so what you filter on is always the number you see. Prices are the cheapest paper printing in any finish, found by streaming Scryfall's Default Cards file (every printing, a couple of gigabytes) through ijson each day. Digital printings, oversized promos and gold border world championship decks don't count, you can't sleeve those up.
 
 There is deliberately no vector index: at ~61k rows Postgres scans everything in a few milliseconds and the results are exact, identical to the old in-memory version. If the game ever grows 10x there is a commented out HNSW index in `common/schema.sql` ready to go.
 
