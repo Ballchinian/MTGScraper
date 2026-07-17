@@ -336,10 +336,14 @@ def main():
     print(str(len(new_cards)) + " new, " + str(len(changed_cards)) + " changed, "
           + str(unchanged) + " unchanged, " + str(len(stale)) + " to remove")
 
-    #every card row gets written every run, not just the new and changed ones.
+    #every card row gets offered every run, not just the new and changed ones.
     #prices move daily and wizards edits the game changer list now and then,
     #so waiting for a rules text change would leave those stale forever. the
-    #slow embedding work below still only happens when text actually changed
+    #WHERE on the conflict clause skips rows where nothing actually differs,
+    #otherwise every run rewrites all ~31k rows (a day of dead tuples and wal
+    #for the autovacuum to mop up) just to store the same values. it also
+    #makes updated_at mean "last actually changed". the slow embedding work
+    #below still only happens when text changed
     print("writing " + str(len(card_rows)) + " card rows (keeps prices and filters fresh)...")
     with conn.cursor() as cur:
         cur.executemany("""
@@ -365,6 +369,15 @@ def main():
                 image_back = EXCLUDED.image_back,
                 edhrec_rank = EXCLUDED.edhrec_rank,
                 updated_at = now()
+            WHERE (cards.name, cards.mana_cost, cards.type_line, cards.oracle_text, cards.image,
+                   cards.scryfall_uri, cards.text_hash, cards.color_identity, cards.price_usd,
+                   cards.price_eur, cards.cmc, cards.game_changer, cards.legal_commander,
+                   cards.layout, cards.image_back, cards.edhrec_rank)
+                  IS DISTINCT FROM
+                  (EXCLUDED.name, EXCLUDED.mana_cost, EXCLUDED.type_line, EXCLUDED.oracle_text, EXCLUDED.image,
+                   EXCLUDED.scryfall_uri, EXCLUDED.text_hash, EXCLUDED.color_identity, EXCLUDED.price_usd,
+                   EXCLUDED.price_eur, EXCLUDED.cmc, EXCLUDED.game_changer, EXCLUDED.legal_commander,
+                   EXCLUDED.layout, EXCLUDED.image_back, EXCLUDED.edhrec_rank)
         """, card_rows)
 
     work = new_cards + changed_cards
