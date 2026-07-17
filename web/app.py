@@ -262,9 +262,13 @@ def fq_term(key, value):
             return "c.layout = 'modal_dfc'", []
         if v == "gamechanger":
             return "c.game_changer = true", []
+        #the layouts that actually occur in the cards table. battle and token
+        #are deliberately absent: battles arrive from scryfall as transform
+        #cards and tokens never enter the database, so both would silently
+        #match nothing instead of being skipped like any other unknown value
         if v in ("normal", "split", "flip", "transform", "modal_dfc", "meld",
-                 "leveler", "class", "saga", "adventure", "mutate", "prototype",
-                 "battle", "token"):
+                 "leveler", "class", "case", "saga", "adventure", "mutate",
+                 "prototype", "prepare"):
             return "c.layout = %s", [v]
         return None
     if key in ("f", "format", "legal", "banned"):
@@ -996,7 +1000,11 @@ def unique_card():
 @app.route("/more")
 def more():
     query = request.args.get("q", "")
-    offset = int(request.args.get("offset", 0))
+    #fail-soft like every other url reader, a doctored offset shouldn't 500
+    try:
+        offset = max(0, int(request.args.get("offset", 0)))
+    except ValueError:
+        offset = 0
     card = find_card(query)
     if card is None:
         return {"results": [], "has_more": False, "weak_count": 0}
