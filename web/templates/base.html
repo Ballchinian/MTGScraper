@@ -29,7 +29,7 @@
                    over the results). the home hero keeps its own autofocus,
                    there the search IS the page. press / to focus this one #}
                 <form action="/search" method="get" class="search-form" autocomplete="off">
-                    <input type="text" name="q" placeholder="Search for a card by name..." value="{{ query or '' }}">
+                    <input type="text" name="q" placeholder="Search for a card by name..." aria-label="card name" value="{{ query or '' }}">
                     <button type="submit">Search</button>
                     <div id="suggestions"></div>
                 </form>

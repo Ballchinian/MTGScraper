@@ -69,7 +69,7 @@
                filter box's way, where the sort list has room for its options #}
             <span class="filter-actions">
                 <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
-                <select name="sort">
+                <select name="sort" aria-label="sort results by">
                     <option value="best">Best match</option>
                     <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
                     <option value="pricey" {% if request.args.get('sort') == 'pricey' %}selected{% endif %}>Price: high to low</option>
@@ -104,10 +104,10 @@
             <p id="report-title"></p>
             <div class="report-controls">
                 <span class="report-pick" id="report-pick">
-                    <input id="report-input" type="text" placeholder="type a card name..." autocomplete="off">
+                    <input id="report-input" type="text" placeholder="type a card name..." aria-label="the card you expected" autocomplete="off">
                     <div id="report-suggest"></div>
                 </span>
-                <textarea id="report-reason" rows="2"></textarea>
+                <textarea id="report-reason" rows="2" aria-label="why you're reporting this"></textarea>
                 <button id="report-send">Send report</button>
                 <button id="report-cancel">Cancel</button>
             </div>

@@ -29,14 +29,14 @@
         </div>
         <div class="adv-row">
             <span class="filter-prices">
-                {{ '€' if cur == 'eur' else '$' }} <input type="number" name="pmin" min="0" step="0.01" placeholder="min" value="{{ request.args.get('pmin', '') }}">
-                to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" value="{{ request.args.get('pmax', '') }}">
+                {{ '€' if cur == 'eur' else '$' }} <input type="number" name="pmin" min="0" step="0.01" placeholder="min" aria-label="minimum price" value="{{ request.args.get('pmin', '') }}">
+                to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" aria-label="maximum price" value="{{ request.args.get('pmax', '') }}">
             </span>
             <p>price bounds, in the currency picked below. cards with no listed price are
             hidden by any price filter. in the filter box: <code>usd&lt;=5</code>, <code>eur&gt;=1</code></p>
         </div>
         <div class="adv-row">
-            <select name="cur">
+            <select name="cur" aria-label="currency">
                 <option value="usd">$ dollars</option>
                 <option value="eur" {% if cur == 'eur' %}selected{% endif %}>€ euros</option>
             </select>
@@ -46,14 +46,14 @@
         </div>
         <div class="adv-row">
             <span class="filter-prices">
-                MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" value="{{ request.args.get('mvmin', '') }}">
-                to <input type="number" name="mvmax" min="0" step="1" placeholder="max" value="{{ request.args.get('mvmax', '') }}">
+                MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" aria-label="minimum mana value" value="{{ request.args.get('mvmin', '') }}">
+                to <input type="number" name="mvmax" min="0" step="1" placeholder="max" aria-label="maximum mana value" value="{{ request.args.get('mvmax', '') }}">
             </span>
             <p>mana value bounds (converted mana cost). in the filter box:
             <code>mv&lt;=2</code>, <code>cmc&gt;=4</code>, both spellings work</p>
         </div>
         <div class="adv-row">
-            <select name="type">
+            <select name="type" aria-label="card type">
                 <option value="">Any type</option>
                 {% for t in types %}
                 <option value="{{ t }}" {% if request.args.get('type') == t %}selected{% endif %}>{{ t }}</option>
