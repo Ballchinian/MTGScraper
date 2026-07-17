@@ -28,6 +28,25 @@ app = Flask(__name__)
 #on the real domain or google treats every page as its http twin
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
+#one canonical domain: once CANONICAL_HOST names the real domain, every other
+#host 301s to it, https and all. unset means no redirect, so this ships safely
+#before dns is ready. only GET/HEAD move, and railway's healthcheck host is
+#left alone so the deploy still passes its check
+CANONICAL_HOST = os.environ.get("CANONICAL_HOST", "").strip().rstrip("/").lower()
+
+
+@app.before_request
+def force_canonical_host():
+    if not CANONICAL_HOST or request.method not in ("GET", "HEAD"):
+        return
+    if request.host.lower() in (CANONICAL_HOST, "healthcheck.railway.app"):
+        return
+    url = "https://" + CANONICAL_HOST + request.path
+    if request.query_string:
+        url += "?" + request.query_string.decode()
+    return redirect(url, code=301)
+
+
 #gzip for every text response (html, json, css, js). the search page and the
 #/more payloads are prose-heavy and shrink several times over
 Compress(app)
