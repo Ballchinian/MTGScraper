@@ -9,7 +9,7 @@ A web app that finds Magic: The Gathering cards that do similar things to the ca
 - Every result shows the exact line that matched and a similarity percent
 - Line picker: click any of the searched card's rules lines to search just that ability (or combine several), and the URL stays shareable
 - Filters: color identity (fits-within, like deckbuilding), price range, mana value range, card type, commanders only (legendary creatures), hide game changers, and cards that aren't commander legal stay hidden unless you tick "include illegal"
-- Results below 90% match (adjustable in the filter bar) wait behind a "show weaker matches" button at the end of the list, so weak coincidences never crowd out real matches but nothing is unreachable
+- Results below 80% match (adjustable in the filter bar) wait behind a "show weaker matches" button at the end of the list, so weak coincidences never crowd out real matches but nothing is unreachable
 - Sort by best match or by price, in dollars or euros, with prices refreshed from Scryfall daily
 - Results that match several of your card's lines say so ("+2 more matching lines")
 - Load more button that pulls the next 20 results without a page reload
@@ -89,9 +89,9 @@ A search grabs the card's own lines from the database, runs a pgvector nearest n
 | "Flying" | Thousands of cards | Heavily downweighted |
 | A wordy triggered ability | A handful of cards | Counts nearly full strength |
 
-The weight is a homemade IDF, `1 / (1 + log(count))`. The percent shown on results is the raw similarity; the weight only affects ordering.
+The weight is a homemade IDF that leaves lines on 5 or fewer cards at full strength (a line shared by 2 cards is a functional reprint, exactly the match people came for), then falls off gently: `1 / (1 + log10(count / 5))`. The percent shown on results is a calibrated display score, pinned to hand-judged pairs so 80 marks the real quality boundary; the weight only affects ordering.
 
-Results split into two tiers around a minimum match percent (90 by default, adjustable in the filter bar). The strong tier is what you see; when it runs out, the load more button turns into "show weaker matches" with a count and keeps paging through the weak tier below a divider. Weak matches can never leapfrog strong ones, even when sorting by price, which is exactly when a cheap 50% coincidence would otherwise sit on top. Filters run inside the nearest neighbor query itself, so a narrow search digs deeper into the rankings instead of thinning out an already-fetched list. Sorting by price happens after all of that: filter by relevance, sort by whatever you like, ties broken by match score. Price never mixes into the similarity percent itself, so the number always means one thing.
+Results split into two tiers around a minimum match percent (80 by default, relaxing to 70 when the slider blends both axes, adjustable in the filter bar). The strong tier is what you see; when it runs out, the load more button turns into "show weaker matches" with a count and keeps paging through the weak tier below a divider. Weak matches can never leapfrog strong ones, even when sorting by price, which is exactly when a cheap 50% coincidence would otherwise sit on top. Filters run inside the nearest neighbor query itself, so a narrow search digs deeper into the rankings instead of thinning out an already-fetched list. Sorting by price happens after all of that: filter by relevance, sort by whatever you like, ties broken by match score. Price never mixes into the similarity percent itself, so the number always means one thing.
 
 Name search runs on the pg_trgm extension: exact match, then prefix, then substring, then trigram similarity so "lightnig bolt" still finds Lightning Bolt. The autocomplete dropdown works the same way.
 
