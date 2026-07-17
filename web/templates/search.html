@@ -453,43 +453,10 @@
             }
         });
 
-        //the same delayed name suggestions as the search bar, in miniature
-        var reportTimer;
-        reportInput.addEventListener("input", function() {
-            clearTimeout(reportTimer);
-            var q = reportInput.value.trim();
-            if (q.length < 2) {
-                reportSuggest.style.display = "none";
-                return;
-            }
-            reportTimer = setTimeout(function() {
-                fetch("/suggest?q=" + encodeURIComponent(q))
-                    .then(function(r) { return r.json(); })
-                    .then(function(data) {
-                        reportSuggest.innerHTML = "";
-                        if (data.names.length == 0) {
-                            reportSuggest.style.display = "none";
-                            return;
-                        }
-                        data.names.forEach(function(name) {
-                            var div = document.createElement("div");
-                            div.className = "suggestion";
-                            div.textContent = name;
-                            div.onclick = function() {
-                                reportInput.value = name;
-                                reportSuggest.style.display = "none";
-                            };
-                            reportSuggest.appendChild(div);
-                        });
-                        reportSuggest.style.display = "block";
-                    });
-            }, 150);
-        });
-
-        document.addEventListener("click", function(e) {
-            if (!e.target.closest(".report-pick")) {
-                reportSuggest.style.display = "none";
-            }
+        //the same name suggestions as the search bar, wired by the shared
+        //helper in base.html, picking just fills the box in
+        wireSuggest(reportInput, reportSuggest, function(name) {
+            reportInput.value = name;
         });
 
         document.getElementById("report-send").onclick = function() {

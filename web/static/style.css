@@ -94,7 +94,8 @@ header {
     cursor: pointer;
 }
 
-.suggestion:hover { background: #efeaf6; }
+/* the arrow keys and the mouse highlight the same way */
+.suggestion:hover, .suggestion.active { background: #efeaf6; }
 
 main {
     max-width: 1000px;

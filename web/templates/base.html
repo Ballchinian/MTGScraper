@@ -43,53 +43,102 @@
 
         <script>
         /*
-            autocomplete for the search bar. waits a moment after each keypress then
-            asks the server for card names matching what's typed so far, so you can
-            find a card even if you only half remember the name. every page has
-            exactly one .search-form (the header's, or the big one on home)
+            autocomplete, shared by the search bar and the report box on the
+            results page. waits a moment after each keypress then asks the
+            server for card names matching what's typed so far, so you can
+            find a card even if you only half remember the name.
+
+            two details that took learning: answers can arrive out of order
+            on a slow connection, so each request takes a number and stale
+            answers get dropped instead of painting over fresh ones. and the
+            arrow keys walk the list like every other search box on the
+            internet, enter picks, escape closes
         */
+        function wireSuggest(input, box, pick) {
+            var timer;
+            var seq = 0;      //stale answers carry an old number and get ignored
+            var active = -1;  //which suggestion the arrow keys are on
+
+            function hide() {
+                box.style.display = "none";
+                active = -1;
+            }
+
+            function mark() {
+                box.querySelectorAll(".suggestion").forEach(function(el, i) {
+                    el.classList.toggle("active", i == active);
+                });
+            }
+
+            input.addEventListener("input", function() {
+                clearTimeout(timer);
+                var q = input.value.trim();
+                if (q.length < 2) {
+                    hide();
+                    return;
+                }
+                //small delay so we dont spam the server on every single keypress
+                timer = setTimeout(function() {
+                    var mine = ++seq;
+                    fetch("/suggest?q=" + encodeURIComponent(q))
+                        .then(function(r) { return r.json(); })
+                        .then(function(data) {
+                            if (mine != seq) {
+                                return;  //something newer is already in flight
+                            }
+                            box.innerHTML = "";
+                            active = -1;
+                            if (data.names.length == 0) {
+                                hide();
+                                return;
+                            }
+                            data.names.forEach(function(name) {
+                                var div = document.createElement("div");
+                                div.className = "suggestion";
+                                div.textContent = name;
+                                div.onclick = function() {
+                                    hide();
+                                    pick(name);
+                                };
+                                box.appendChild(div);
+                            });
+                            box.style.display = "block";
+                        })
+                        .catch(hide);
+                }, 150);
+            });
+
+            input.addEventListener("keydown", function(e) {
+                if (box.style.display != "block") {
+                    return;
+                }
+                var n = box.querySelectorAll(".suggestion").length;
+                if (e.key == "ArrowDown" || e.key == "ArrowUp") {
+                    e.preventDefault();
+                    active = e.key == "ArrowDown" ? (active + 1) % n : (active - 1 + n) % n;
+                    mark();
+                } else if (e.key == "Enter" && active >= 0) {
+                    e.preventDefault();
+                    var name = box.querySelectorAll(".suggestion")[active].textContent;
+                    hide();
+                    pick(name);
+                } else if (e.key == "Escape") {
+                    hide();
+                }
+            });
+
+            //clicking anywhere else closes the dropdown
+            document.addEventListener("click", function(e) {
+                if (!box.contains(e.target) && e.target != input) {
+                    hide();
+                }
+            });
+        }
+
         var searchInput = document.querySelector(".search-form input");
-        var suggestBox = document.getElementById("suggestions");
-        var typingTimer;
-
-        searchInput.addEventListener("input", function() {
-            clearTimeout(typingTimer);
-            var q = searchInput.value.trim();
-            if (q.length < 2) {
-                suggestBox.style.display = "none";
-                return;
-            }
-            //small delay so we dont spam the server on every single keypress
-            typingTimer = setTimeout(function() {
-                fetch("/suggest?q=" + encodeURIComponent(q))
-                    .then(function(r) { return r.json(); })
-                    .then(function(data) {
-                        suggestBox.innerHTML = "";
-                        if (data.names.length == 0) {
-                            suggestBox.style.display = "none";
-                            return;
-                        }
-                        data.names.forEach(function(name) {
-                            var div = document.createElement("div");
-                            div.className = "suggestion";
-                            div.textContent = name;
-                            div.onclick = function() {
-                                searchInput.value = name;
-                                suggestBox.style.display = "none";
-                                document.querySelector(".search-form").submit();
-                            };
-                            suggestBox.appendChild(div);
-                        });
-                        suggestBox.style.display = "block";
-                    });
-            }, 150);
-        });
-
-        //clicking anywhere outside the search bar closes the dropdown
-        document.addEventListener("click", function(e) {
-            if (!e.target.closest(".search-form")) {
-                suggestBox.style.display = "none";
-            }
+        wireSuggest(searchInput, document.getElementById("suggestions"), function(name) {
+            searchInput.value = name;
+            document.querySelector(".search-form").submit();
         });
         </script>
 
