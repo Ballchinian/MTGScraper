@@ -7,6 +7,8 @@
         {# the search-engine snippet. pages override the block with their own
            sentence, search.html says which card its results are about #}
         <meta name="description" content="{% block metadesc %}Delvefall finds every Magic: The Gathering card that does the same thing as the card you search, even when the wording is completely different.{% endblock %}">
+        {# search console's proof of ownership, google re-checks it, it stays #}
+        <meta name="google-site-verification" content="MaCexj4Rm5MMLsWW_iazgCN1J4IZA7dvy1lyxJmGVCw">
         {# every meaningful page is mostly card pictures from this one host,
            preconnecting shaves the dns+tls handshake off the first one #}
         <link rel="preconnect" href="https://cards.scryfall.io">
