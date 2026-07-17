@@ -744,8 +744,15 @@ body.home footer a { color: #a8b9ca; }
 /* the rotate / flip / transform buttons, an overlay that fades in when the
    mouse is over the picture. translucent and hugging the bottom edge so it
    never really covers the art, and absolutely positioned so no layout
-   anywhere has to know whether a card has buttons */
-.card-frame { position: relative; }
+   anywhere has to know whether a card has buttons.
+   the aspect ratio is a magic card's (scryfall's normal images are 488x680):
+   the frame owns its height before a single image byte arrives, so the grid
+   doesn't jump around while pictures load. the sideways class swaps in the
+   landscape ratio, its selector is more specific so it wins */
+.card-frame {
+    position: relative;
+    aspect-ratio: 488 / 680;
+}
 
 .card-overlay {
     position: absolute;

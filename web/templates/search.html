@@ -7,8 +7,10 @@
         <p class="message">Couldn't find a card called "{{ query }}", maybe check the spelling?</p>
     {% elif card %}
         <div class="searched-card">
+            {# fetchpriority: this picture is the biggest thing above the
+               fold, it shouldn't queue behind twenty result thumbnails #}
             <div class="card-frame" data-sideways="{{ '1' if card.sideways else '' }}" data-flip="{{ '1' if card.flip else '' }}" data-back="{{ card.image_back }}">
-                <img src="{{ card.image }}" alt="{{ card.name }}">
+                <img src="{{ card.image }}" alt="{{ card.name }}" fetchpriority="high">
             </div>
             <div class="searched-info">
                 <h1>{{ card.name }} <span class="mana">{{ card.mana_cost }}</span></h1>

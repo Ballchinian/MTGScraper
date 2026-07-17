@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
     <head>
         <meta charset="utf-8">
         <title>{% block title %}Delvefall{% endblock %}</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
+        {# every meaningful page is mostly card pictures from this one host,
+           preconnecting shaves the dns+tls handshake off the first one #}
+        <link rel="preconnect" href="https://cards.scryfall.io">
         <link rel="icon" type="image/png" href="{{ url_for('static', filename='DelvefallLogo.png') }}">
         <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     </head>
