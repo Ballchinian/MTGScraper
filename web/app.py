@@ -1012,11 +1012,15 @@ def more():
 #---- user feedback: "a card is missing" / "this card shouldn't be here" ----
 
 def client_ip():
-    #railway sits behind a proxy, so the visitor's real address is the first
-    #entry of the forwarded list, not remote_addr
+    #railway's proxy APPENDS the address it saw to X-Forwarded-For, so the
+    #last entry is its word and everything left of it is client supplied.
+    #reading the first entry would let anyone dodge the report rate limit by
+    #sending a made-up header. one proxy deep is a railway fact: putting a
+    #cdn in front of the site would add an entry and this needs to move one
+    #step left
     fwd = request.headers.get("X-Forwarded-For", "")
     if fwd:
-        return fwd.split(",")[0].strip()
+        return fwd.split(",")[-1].strip()
     return request.remote_addr or ""
 
 
