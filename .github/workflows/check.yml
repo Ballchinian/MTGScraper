@@ -1,0 +1,23 @@
+#railway only deploys web/, so web/ carries copies of code that lives in
+#common/ and ingest/ (clean_line, the prefix word catalogs, the calibration
+#seeds). this fails the push whenever a copy drifts from its source of
+#truth, which is the failure mode that would silently break the line picker
+
+name: check web copies
+
+on:
+    push:
+    workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      #stdlib only, nothing to install
+      - run: python tools/check_sync.py
