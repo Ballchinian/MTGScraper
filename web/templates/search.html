@@ -20,6 +20,20 @@
     <meta property="og:image" content="{{ card.image }}">
     <meta property="og:url" content="{{ canonical }}">
     <meta name="twitter:card" content="summary">
+    {# breadcrumbs: the one rich result type a card page honestly claims.
+       google reads it and prints the snippet's url line as a trail,
+       "Delvefall > card name". the last crumb is this page, so it names
+       itself and leaves the url to the canonical above #}
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "Delvefall", "item": {{ request.url_root | tojson }}},
+            {"@type": "ListItem", "position": 2, "name": {{ card.name | tojson }}}
+        ]
+    }
+    </script>
     {% endif %}
 {% endblock %}
 
