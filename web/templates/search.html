@@ -192,6 +192,70 @@
             };
         }
 
+        /*
+            one result card as dom elements, mirroring the server-rendered
+            markup above. everything is set through textContent and
+            properties, never glued into an html string, so a name or a rules
+            line full of quotes (or anything else) can't break out of the
+            markup. tiny helper: make an element, place it, fill it
+        */
+        function el(tag, cls, parent, text) {
+            var node = document.createElement(tag);
+            node.className = cls;
+            if (text !== undefined) {
+                node.textContent = text;
+            }
+            parent.appendChild(node);
+            return node;
+        }
+
+        function buildResult(r) {
+            var div = document.createElement("div");
+            div.className = "result";
+
+            var frame = el("div", "card-frame", div);
+            frame.dataset.sideways = r.sideways ? "1" : "";
+            frame.dataset.flip = r.flip ? "1" : "";
+            frame.dataset.back = r.image_back;
+            var link = el("a", "", frame);
+            link.href = r.scryfall_uri;
+            link.target = "_blank";
+            link.title = "opens on scryfall. ctrl-click to search this card here instead";
+            var img = el("img", "", link);
+            img.src = r.image;
+            img.alt = r.name;
+            img.loading = "lazy";
+            var flag = el("button", "report-flag", frame, "?");
+            flag.title = "shouldn't be here? report this as a bad match";
+            flag.dataset.id = r.oracle_id;
+            flag.dataset.name = r.name;
+
+            var name = el("div", "result-name", div, r.name + " ");
+            var pct = el("span", "percent" + (r.concept_only ? " concept" : ""), name, r.percent + "%");
+            if (r.blended) {
+                pct.title = "rules text " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
+            }
+            if (r.price || r.rank) {
+                var price = el("div", "result-price", div, r.price);
+                if (r.rank) {
+                    el("span", "result-rank", price, r.rank).title = "edhrec rank, 1 is the most played card in commander";
+                }
+            }
+            if (r.their_line) {
+                el("div", "match-line", div, '"' + r.their_line + '"').title =
+                    "matches your card's line: " + r.our_line +
+                    (r.matched_back ? " (printed on the back face, shown here)" : "");
+            }
+            if (r.more_count) {
+                el("div", "more-lines", div, "+" + r.more_count + " more matching " + (r.more_count == 1 ? "line" : "lines")).title = r.more_text;
+            }
+            if (r.concept_tags) {
+                el("div", "concept-tags", div, r.concept_tags).title =
+                    "community tags shared with your card" + (r.concept_only ? "" : " - concept match " + r.concept_pct + "%");
+            }
+            return div;
+        }
+
         var offset = 20;
         var btn = document.getElementById("load-more");
         if (btn) {
@@ -214,71 +278,10 @@
                         var grid = document.querySelector(".card-grid");
                         //the first weak batch gets a divider so the quality drop is labeled
                         if (weakTier && offset == 0 && data.results.length) {
-                            var divider = document.createElement("div");
-                            divider.className = "weak-divider";
-                            divider.textContent = "matches below " + btn.dataset.min + "% from here";
-                            grid.appendChild(divider);
+                            el("div", "weak-divider", grid, "matches below " + btn.dataset.min + "% from here");
                         }
                         data.results.forEach(function(r) {
-                            var div = document.createElement("div");
-                            div.className = "result";
-                            var html = '<div class="card-frame"' +
-                                ' data-sideways="' + (r.sideways ? '1' : '') + '"' +
-                                ' data-flip="' + (r.flip ? '1' : '') + '"' +
-                                ' data-back="' + r.image_back + '">' +
-                                '<a href="' + r.scryfall_uri + '" target="_blank" title="opens on scryfall. ctrl-click to search this card here instead">' +
-                                '<img src="' + r.image + '" alt="" loading="lazy"></a></div>' +
-                                '<div class="result-name">' + r.name + ' <span class="percent' + (r.concept_only ? ' concept' : '') + '">' + r.percent + '%</span></div>';
-                            if (r.price || r.rank) {
-                                html += '<div class="result-price">' + r.price +
-                                    (r.rank ? '<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">' + r.rank + '</span>' : '') +
-                                    '</div>';
-                            }
-                            if (r.their_line) {
-                                html += '<div class="match-line">"' + r.their_line + '"</div>';
-                            }
-                            if (r.more_count) {
-                                html += '<div class="more-lines">+' + r.more_count + ' more matching ' + (r.more_count == 1 ? "line" : "lines") + '</div>';
-                            }
-                            if (r.concept_tags) {
-                                html += '<div class="concept-tags"></div>';
-                            }
-                            div.innerHTML = html;
-                            /*
-                                the tooltips (and the tag text) get set as properties
-                                instead of going in the html string, the line text is full
-                                of quote characters that would break out of an attribute
-                            */
-                            if (r.their_line) {
-                                div.querySelector(".match-line").title = "matches your card's line: " + r.our_line +
-                                    (r.matched_back ? " (printed on the back face, shown here)" : "");
-                            }
-                            if (r.more_count) {
-                                div.querySelector(".more-lines").title = r.more_text;
-                            }
-                            if (r.concept_tags) {
-                                var tagsDiv = div.querySelector(".concept-tags");
-                                tagsDiv.textContent = r.concept_tags;
-                                tagsDiv.title = "community tags shared with your card" + (r.concept_only ? "" : " - concept match " + r.concept_pct + "%");
-                            }
-                            if (r.blended) {
-                                div.querySelector(".percent").title = "rules text " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
-                            }
-                            /*
-                                the report flag is built as an element for the same
-                                reason as the tooltips: card names can hold quote
-                                characters that would break out of an attribute.
-                                it lives inside the frame so it can ride the
-                                picture's corner like the server-rendered ones
-                            */
-                            var flag = document.createElement("button");
-                            flag.className = "report-flag";
-                            flag.textContent = "?";
-                            flag.title = "shouldn't be here? report this as a bad match";
-                            flag.dataset.id = r.oracle_id;
-                            flag.dataset.name = r.name;
-                            div.querySelector(".card-frame").appendChild(flag);
-                            grid.appendChild(div);
+                            grid.appendChild(buildResult(r));
                         });
                         //the fresh frames need their rotate/flip/transform buttons
                         enhanceCardFrames(grid);
@@ -295,6 +298,12 @@
                                 btn.remove();
                             }
                         }
+                    })
+                    .catch(function() {
+                        //a network hiccup shouldn't strand the button on "Loading..."
+                        btn.textContent = weakTier
+                            ? "Show weaker matches (below " + btn.dataset.min + "%)"
+                            : "Load 20 more";
                     });
             };
         }
