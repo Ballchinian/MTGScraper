@@ -90,6 +90,7 @@
                     <option value="played" {% if request.args.get('sort') == 'played' %}selected{% endif %}>Most played</option>
                     <option value="obscure" {% if request.args.get('sort') == 'obscure' %}selected{% endif %}>Least played</option>
                     <option value="new" {% if request.args.get('sort') == 'new' %}selected{% endif %}>Newest first</option>
+                    <option value="old" {% if request.args.get('sort') == 'old' %}selected{% endif %}>Oldest first</option>
                 </select>
                 <button type="submit">Apply</button>
             </span>

@@ -527,7 +527,7 @@ def read_min(blend=0):
 
 def read_sort():
     s = request.args.get("sort", "")
-    if s not in ("cheap", "pricey", "played", "obscure", "new"):
+    if s not in ("cheap", "pricey", "played", "obscure", "new", "old"):
         s = "best"
     return s
 
@@ -849,9 +849,10 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             worst = 10 ** 9
             flip = 1 if sort == "played" else -1
             wanted = sorted(wanted, key=lambda x: (flip * (ranks.get(x[0]) or worst), -gate_score(x)))
-        elif sort == "new":
-            #first printing's release date, newest card first. reverse flips
-            #both keys, so date ties land best badge first
+        elif sort in ("new", "old"):
+            #first printing's release date, as an ordinal so one flip serves
+            #both directions. dateless cards sink either way, and date ties
+            #land best badge first
             dated = []
             undated = []
             for entry in wanted:
@@ -859,7 +860,8 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                     undated.append(entry)
                 else:
                     dated.append(entry)
-            dated.sort(key=lambda x: (dates[x[0]], gate_score(x)), reverse=True)
+            flip = -1 if sort == "new" else 1
+            dated.sort(key=lambda x: (flip * dates[x[0]].toordinal(), -gate_score(x)))
             wanted = dated + undated
 
         has_more = len(wanted) > offset + how_many
