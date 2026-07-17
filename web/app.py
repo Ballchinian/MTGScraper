@@ -9,6 +9,7 @@ import math
 import uuid
 import json
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, render_template, request, redirect, abort, make_response, url_for
 from flask_compress import Compress
@@ -638,50 +639,71 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
     where, fparams = filter_sql(filters)
     #the column the price sorts read, matching the currency the page prints
     pcol = "c.price_usd" if currency == "usd" else "c.price_eur"
+    #the query card's lines are already embedded in the database, so the
+    #model never runs at search time. grab them with their idf counts in one
+    #go, on a briefly borrowed connection
     with pool.connection() as conn:
-        #the query card's lines are already embedded in the database, so the
-        #model never runs at search time. grab them with their idf counts in one go.
-        #
-        #one query per line on purpose. the obvious "one big query" (the
-        #anchor's lines CROSS JOIN LATERAL the nearest-neighbor scan) was
-        #built and measured at 2.3x SLOWER: with the anchor embedding as a
-        #lateral outer column postgres re-detoasts the ~3kb vector for every
-        #one of the 61k distance evaluations, while a bound parameter gets
-        #detoasted once. the round trips this loop spends are ~1ms each on
-        #railway's private network, noise next to that
         qlines = conn.execute("""
             SELECT l.line_text, l.embedding, coalesce(s.count, 1) AS count
             FROM lines l LEFT JOIN line_stats s ON s.line_text = l.line_text
             WHERE l.oracle_id = %s AND NOT l.whole
         """, (oracle_id,)).fetchall()
 
-        #if the user picked lines on the page, only search with those
-        if picked:
-            chosen = []
-            for ql in qlines:
-                if ql["line_text"] in picked:
-                    chosen.append(ql)
-            if chosen:
-                qlines = chosen
-
+    #if the user picked lines on the page, only search with those
+    if picked:
+        chosen = []
         for ql in qlines:
-            w = line_weight(ql["count"])
-            #<=> is pgvector's cosine distance, so similarity is 1 minus it.
-            #grab way more than we need since a bunch will get merged per card
-            matches = conn.execute("""
+            if ql["line_text"] in picked:
+                chosen.append(ql)
+        if chosen:
+            qlines = chosen
+
+    def hunt(ql):
+        #one line's nearest neighbor scan, ~200ms of pgvector math each.
+        #<=> is cosine distance, so similarity is 1 minus it. grab way more
+        #than we need since a bunch will get merged per card.
+        #
+        #one query per line on purpose. the obvious "one big query" (the
+        #anchor's lines CROSS JOIN LATERAL the scan) was built and measured
+        #at 2.3x SLOWER: with the anchor embedding as a lateral outer column
+        #postgres re-detoasts the ~3kb vector for every one of the 61k
+        #distance evaluations, while a bound parameter gets detoasted once
+        #the l.id tiebreak makes the 400 cut deterministic: hundreds of
+        #cards can sit at exactly the same distance (identical common
+        #lines), and without a total order postgres hands back an arbitrary
+        #subset of the tie that changes run to run, so the deep end of the
+        #results could shuffle between a page load and its load-more
+        with pool.connection() as c:
+            return c.execute("""
                 SELECT l.oracle_id, l.line_text, l.face, 1 - (l.embedding <=> %s) AS sim, """ + pcol + """ AS price, c.edhrec_rank
                 FROM lines l JOIN cards c ON c.oracle_id = l.oracle_id
                 WHERE l.oracle_id <> %s AND NOT l.whole""" + where + """
-                ORDER BY l.embedding <=> %s
+                ORDER BY l.embedding <=> %s, l.id
                 LIMIT 400
             """, [ql["embedding"], oracle_id] + fparams + [ql["embedding"]]).fetchall()
-            for m in matches:
-                if m["oracle_id"] not in pairs_by_card:
-                    pairs_by_card[m["oracle_id"]] = []
-                pairs_by_card[m["oracle_id"]].append((m["sim"] * w, m["sim"], ql["line_text"], m["line_text"], m["face"]))
-                prices[m["oracle_id"]] = m["price"]
-                ranks[m["oracle_id"]] = m["edhrec_rank"]
 
+    #multi-line cards pay for their scans side by side instead of one after
+    #the other, each hunt on its own pooled connection. the main thread
+    #holds NO connection while they run (holding one while workers wait on
+    #the pool is how a pool deadlocks), and 3 workers keeps a connection
+    #free for /suggest even when two searches land at once. map preserves
+    #line order, so results merge exactly as the sequential loop did
+    if len(qlines) > 1:
+        with ThreadPoolExecutor(max_workers=min(3, len(qlines))) as ex:
+            per_line = list(ex.map(hunt, qlines))
+    else:
+        per_line = [hunt(ql) for ql in qlines]
+
+    for ql, matches in zip(qlines, per_line):
+        w = line_weight(ql["count"])
+        for m in matches:
+            if m["oracle_id"] not in pairs_by_card:
+                pairs_by_card[m["oracle_id"]] = []
+            pairs_by_card[m["oracle_id"]].append((m["sim"] * w, m["sim"], ql["line_text"], m["line_text"], m["face"]))
+            prices[m["oracle_id"]] = m["price"]
+            ranks[m["oracle_id"]] = m["edhrec_rank"]
+
+    with pool.connection() as conn:
         #sort each card's pairs so pairs[0] is its best one, then rank the
         #cards by that best pair
         ranked = []
