@@ -9,8 +9,11 @@
         <div class="searched-card">
             {# fetchpriority: this picture is the biggest thing above the
                fold, it shouldn't queue behind twenty result thumbnails #}
+            {# the 488x680 on every card img is scryfall's normal size, so
+               the browser knows each picture's shape before it arrives (the
+               css scales the width, height: auto keeps the ratio) #}
             <div class="card-frame" data-sideways="{{ '1' if card.sideways else '' }}" data-flip="{{ '1' if card.flip else '' }}" data-back="{{ card.image_back }}">
-                <img src="{{ card.image }}" alt="{{ card.name }}" fetchpriority="high">
+                <img src="{{ card.image }}" alt="{{ card.name }}" width="488" height="680" fetchpriority="high">
             </div>
             <div class="searched-info">
                 <h1>{{ card.name }} <span class="mana">{{ card.mana_cost }}</span></h1>
@@ -103,7 +106,7 @@
                    it fades in with the rest of the hover overlay #}
                 <div class="card-frame" data-sideways="{{ '1' if r.sideways else '' }}" data-flip="{{ '1' if r.flip else '' }}" data-back="{{ r.image_back }}">
                     <a href="{{ r.scryfall_uri }}" target="_blank" title="opens on scryfall. ctrl-click to search this card here instead">
-                        <img src="{{ r.image }}" alt="{{ r.name }}" loading="lazy">
+                        <img src="{{ r.image }}" alt="{{ r.name }}" width="488" height="680" loading="lazy">
                     </a>
                     <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="shouldn't be here? report this as a bad match">?</button>
                 </div>
@@ -226,6 +229,8 @@
             var img = el("img", "", link);
             img.src = r.image;
             img.alt = r.name;
+            img.width = 488;   //scryfall's normal size, same as the
+            img.height = 680;  //server-rendered cards declare
             img.loading = "lazy";
             var flag = el("button", "report-flag", frame, "?");
             flag.title = "shouldn't be here? report this as a bad match";

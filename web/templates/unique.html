@@ -95,6 +95,8 @@ function render(c) {
     var img = document.createElement("img");
     img.src = c.image;
     img.alt = c.name;
+    img.width = 488;   //scryfall's normal size, so the box holds its
+    img.height = 680;  //shape before the picture arrives
     link.appendChild(img);
     frame.appendChild(link);
     div.appendChild(frame);

@@ -19,7 +19,7 @@
             {% for c in r.cards %}
             <div class="fb-card">
                 <div class="fb-role">{{ c.role }}</div>
-                {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" loading="lazy">{% endif %}
+                {% if c.image %}<img src="{{ c.image }}" alt="{{ c.name }}" width="488" height="680" loading="lazy">{% endif %}
                 <div>{{ c.name }}{% if c.pct is not none %} · {{ c.pct }}%{% endif %}</div>
             </div>
             {% endfor %}

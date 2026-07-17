@@ -131,6 +131,7 @@ main {
 
 .searched-card img {
     width: 100%;
+    height: auto; /* same story as .result img, the attrs declare 488x680 */
     display: block;
     border-radius: 11px; /* real cards have rounded corners */
 }
@@ -247,6 +248,8 @@ h2 {
 
 .result img {
     width: 100%;
+    height: auto; /* the imgs carry width/height attributes for the browser's
+                     sake, this keeps the scaled height following the ratio */
     display: block;
     border-radius: 4.75% / 3.5%; /* the magic card corner radius, took a while to eyeball this */
     transition: transform .1s;
@@ -987,6 +990,7 @@ body.home footer a { color: #a8b9ca; }
 
 .fb-card img {
     width: 100%;
+    height: auto;
     border-radius: 4.75% / 3.5%;
 }
 
