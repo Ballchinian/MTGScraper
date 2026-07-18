@@ -129,7 +129,9 @@ main {
     align-self: flex-start;
 }
 
-.searched-card img {
+/* scoped to the frame: the mana symbols in the title are imgs too now,
+   and they must not inherit the fill-the-column treatment */
+.searched-card .card-frame img {
     width: 100%;
     height: auto; /* same story as .result img, the attrs declare 488x680 */
     display: block;

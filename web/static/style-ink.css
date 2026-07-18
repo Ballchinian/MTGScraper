@@ -171,7 +171,9 @@ main {
     align-self: flex-start;
 }
 
-.searched-card img {
+/* scoped to the frame: the mana symbols in the title are imgs too now,
+   and they must not inherit the fill-the-column treatment */
+.searched-card .card-frame img {
     width: 100%;
     height: auto; /* same story as .result img, the attrs declare 488x680 */
     display: block;
@@ -186,6 +188,12 @@ main {
     font-size: 15px;
     color: var(--muted);
     font-weight: normal;
+}
+
+/* the cost symbols riding the card name, nudged to sit on the baseline */
+.mana img {
+    vertical-align: -2px;
+    margin-left: 1px;
 }
 
 .type-line { color: var(--muted); margin: 4px 0 12px 0; }
@@ -244,22 +252,22 @@ main {
 .filter-colors {
     display: inline-flex;
     gap: 6px;
-    font-weight: 700;
 }
 
-/* the color letters as mana-symbol chips: dark letter on the real symbol
-   background colors. the checkbox hides and the whole chip is the toggle,
-   faded means off, the double ring means on */
+/* scryfall's real symbol svgs as the color toggles. the checkbox hides and
+   the whole symbol is the chip, faded means off, the double ring means on */
 .filter-colors label {
     position: relative;
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    justify-content: center;
-    border: 1px solid rgba(33, 31, 26, 0.3);
-    color: #1c1a15;
-    font-size: 13px;
     opacity: 0.45;
+}
+
+.filter-colors label img {
+    display: block;
+    width: 100%;
+    height: 100%;
 }
 
 .filter-colors label:hover { opacity: 0.75; }
@@ -279,12 +287,6 @@ main {
     opacity: 0;
     pointer-events: none;
 }
-
-.ci-w { background: #f2edd7; }
-.ci-u { background: #b5cde3; }
-.ci-b { background: #cac5c0; }
-.ci-r { background: #efa088; }
-.ci-g { background: #a5c095; }
 
 .filter-prices { display: inline-flex; align-items: center; gap: 6px; }
 

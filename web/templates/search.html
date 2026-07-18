@@ -51,7 +51,7 @@
                 <img src="{{ card.image }}" alt="{{ card.name }}" width="488" height="680" fetchpriority="high">
             </div>
             <div class="searched-info">
-                <h1>{{ card.name }} <span class="mana">{{ card.mana_cost }}</span></h1>
+                <h1>{{ card.name }} <span class="mana">{{ card.mana_cost | mana }}</span></h1>
                 <p class="type-line">{{ card.type_line }}</p>
                 <div class="oracle">
                     {% for line in card_lines %}

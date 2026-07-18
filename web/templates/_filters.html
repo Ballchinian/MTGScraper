@@ -17,11 +17,12 @@
     <div class="adv-grid">
         <div class="adv-row">
             <span class="filter-colors">
-                <label class="ci-w"><input type="checkbox" name="colors" value="W" {% if 'W' in request.args.getlist('colors') %}checked{% endif %}>W</label>
-                <label class="ci-u"><input type="checkbox" name="colors" value="U" {% if 'U' in request.args.getlist('colors') %}checked{% endif %}>U</label>
-                <label class="ci-b"><input type="checkbox" name="colors" value="B" {% if 'B' in request.args.getlist('colors') %}checked{% endif %}>B</label>
-                <label class="ci-r"><input type="checkbox" name="colors" value="R" {% if 'R' in request.args.getlist('colors') %}checked{% endif %}>R</label>
-                <label class="ci-g"><input type="checkbox" name="colors" value="G" {% if 'G' in request.args.getlist('colors') %}checked{% endif %}>G</label>
+                {# scryfall's own symbol svgs, the alt text names the checkbox for screen readers #}
+                <label class="ci-w"><input type="checkbox" name="colors" value="W" {% if 'W' in request.args.getlist('colors') %}checked{% endif %}><img src="{{ static_url('symbols/W.svg') }}" alt="white" width="26" height="26"></label>
+                <label class="ci-u"><input type="checkbox" name="colors" value="U" {% if 'U' in request.args.getlist('colors') %}checked{% endif %}><img src="{{ static_url('symbols/U.svg') }}" alt="blue" width="26" height="26"></label>
+                <label class="ci-b"><input type="checkbox" name="colors" value="B" {% if 'B' in request.args.getlist('colors') %}checked{% endif %}><img src="{{ static_url('symbols/B.svg') }}" alt="black" width="26" height="26"></label>
+                <label class="ci-r"><input type="checkbox" name="colors" value="R" {% if 'R' in request.args.getlist('colors') %}checked{% endif %}><img src="{{ static_url('symbols/R.svg') }}" alt="red" width="26" height="26"></label>
+                <label class="ci-g"><input type="checkbox" name="colors" value="G" {% if 'G' in request.args.getlist('colors') %}checked{% endif %}><img src="{{ static_url('symbols/G.svg') }}" alt="green" width="26" height="26"></label>
             </span>
             <p>color identity, fits-within like deckbuilding: tick W and U and only white,
             blue, white-blue and colorless cards show. in the filter box: <code>id:wu</code> (or <code>-id:rg</code> to ban colors),

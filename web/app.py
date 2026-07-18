@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Flask, render_template, request, redirect, abort, make_response, url_for, Response
 from flask_compress import Compress
+from markupsafe import Markup, escape
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from db import pool
@@ -67,6 +68,31 @@ def static_url(filename):
             v = hashlib.md5(f.read()).hexdigest()[:8]
         _static_hash[filename] = v
     return url_for("static", filename=filename) + "?v=" + v
+
+
+_MANA_TOKEN = re.compile(r"\{([^}]+)\}")
+
+
+#the mana cost as scryfall's symbol svgs: {2}{W/U} becomes two imgs, named
+#the way the files in static/symbols are named (WU.svg). tokens with no file
+#and the text between tokens ({W} // {U} on split cards) stay as text
+@app.template_filter()
+def mana(cost):
+    if not cost:
+        return ""
+    out = []
+    last = 0
+    for m in _MANA_TOKEN.finditer(cost):
+        out.append(escape(cost[last:m.start()]))
+        try:
+            url = static_url("symbols/" + m.group(1).replace("/", "") + ".svg")
+        except OSError:
+            out.append(escape(m.group(0)))
+        else:
+            out.append(Markup('<img src="%s" alt="%s" width="16" height="16">') % (url, m.group(0)))
+        last = m.end()
+    out.append(escape(cost[last:]))
+    return Markup("").join(out)
 
 #user reports from the results page (see the /feedback route). the table
 #really lives in common/schema.sql, but that file ships with the ingest and
