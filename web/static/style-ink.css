@@ -485,10 +485,15 @@ h2 {
 }
 
 /* the bar lays out as two rows, the same shape on /search and /unique: the
-   filter box alone on top, then the blend slider, the extra-filters fold
+   filter box alone on top, then the extra-filters fold, the blend slider
    and (on /search only) the actions underneath. flex order does the
-   arranging so the shared markup and its tab order stay put */
-.blend-slider { order: 1; }
+   arranging so the shared markup and its tab order stay put.
+   the fold opens down the left edge, under the filter box it belongs to,
+   and the slider rides the right end with the actions */
+.blend-slider {
+    order: 2;
+    align-self: flex-start; /* stay level with the summary when the panel opens */
+}
 
 /* the filter box: scryfall syntax applied to the results. the headline
    control, so the full-width basis gives it the top row to itself */
@@ -508,15 +513,15 @@ h2 {
     border-color: var(--teal);
 }
 
-/* the fold-out extra filters panel. the summary sits on the bottom row
-   between the slider and the actions, the open panel drops below it so
-   each control gets room for its explanation.
+/* the fold-out extra filters panel. the summary opens the bottom row at the
+   left, the open panel drops below it so each control gets room for its
+   explanation.
    the basis is the row math: the slider (~230px) and the actions (~385px,
-   /search only) flank it, rounded up for slack, and the panel grows into
-   whatever they leave, wider on /unique where there are no actions */
+   /search only) sit to its right, rounded up for slack, and the panel grows
+   into whatever they leave, wider on /unique where there are no actions */
 .adv-filters {
     flex: 1 1 calc(100% - 660px);
-    order: 2;
+    order: 1;
 }
 
 .adv-filters summary {
@@ -526,8 +531,9 @@ h2 {
     width: max-content;
 }
 
-/* sort and apply, parked at the right end of the bottom row. they stay
-   level with the summary instead of centering when the panel opens */
+/* min match, sort and apply, parked at the right end of the bottom row past
+   the slider. they stay level with the summary instead of centering when
+   the panel opens */
 .filter-actions {
     display: inline-flex;
     align-items: center;
