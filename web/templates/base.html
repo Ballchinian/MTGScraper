@@ -13,7 +13,8 @@
            preconnecting shaves the dns+tls handshake off the first one #}
         <link rel="preconnect" href="https://cards.scryfall.io">
         <link rel="icon" type="image/png" href="{{ static_url('DelvefallLogo.png') }}">
-        <link rel="stylesheet" href="{{ static_url('style.css') }}">
+        {# trying out the ink and paper skin, swap back to style.css for the old look #}
+        <link rel="stylesheet" href="{{ static_url('style-ink.css') }}">
         {% block head_extra %}{% endblock %}
     </head>
     <body class="{% block bodyclass %}{% endblock %}">

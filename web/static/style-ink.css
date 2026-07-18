@@ -1,0 +1,1166 @@
+/* the ink and paper variant of style.css: same layout, different skin.
+   palette comes from the logo (dark ink, warm cream), display type is
+   fraunces, the accent is a delve-ish teal instead of scryfall purple.
+   a/b against the old look by pointing base.html back at style.css */
+
+/* fraunces variable fonts, self hosted (see fonts/OFL.txt). headings and
+   card names only, the ui stays on the system stack */
+@font-face {
+    font-family: "Fraunces";
+    src: url("fonts/Fraunces.woff2") format("woff2");
+    font-weight: 300 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "Fraunces";
+    src: url("fonts/Fraunces-Italic.woff2") format("woff2");
+    font-weight: 300 900;
+    font-style: italic;
+    font-display: swap;
+}
+
+:root {
+    --ink: #24333f;         /* the logo's tray */
+    --paper: #f8f5ee;       /* page background, quiet cream */
+    --panel: #fefdf9;       /* cards and bars */
+    --line: #e2dac9;        /* panel borders */
+    --line-strong: #d4cab5; /* input borders */
+    --text: #211f1a;
+    --muted: #6b6557;
+    --teal: #1d6a60;        /* the action color */
+    --teal-hover: #277f70;
+    --gold: #8a6d2f;        /* match percents, rare-symbol gold */
+    --wash: #f3eee0;        /* hover and picked backgrounds */
+    --serif: "Fraunces", Georgia, serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--text);
+}
+
+h1, h2, h3 {
+    font-family: var(--serif);
+    font-weight: 600;
+}
+
+header {
+    background: var(--ink);
+    padding: 12px 16px;
+}
+
+.header-inner {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 30px;
+}
+
+.site-name {
+    font-family: var(--serif);
+    color: #f3eedd;
+    font-weight: 600;
+    font-size: 21px;
+    text-decoration: none;
+}
+
+.search-form {
+    flex: 1;
+    display: flex;
+    position: relative;
+}
+
+.search-form input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 2px 0 0 2px;
+    font-size: 15px;
+    outline: none;
+    background: #fffef9;
+}
+
+.search-form button {
+    background: var(--teal);
+    color: white;
+    border: 0;
+    padding: 8px 18px;
+    border-radius: 0 2px 2px 0;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+.search-form button:hover { background: var(--teal-hover); }
+
+.header-links {
+    display: flex;
+    gap: 30px;
+}
+
+.header-links a {
+    color: #cfc9b8;
+    font-size: 14px;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.header-links a:hover { color: #fff; text-decoration: underline; }
+
+/* the autocomplete dropdown, sits right under the search bar. the report
+   bar's mini version borrows the exact same look */
+#suggestions, #report-suggest {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: #fffef9;
+    border: 1px solid var(--line-strong);
+    border-radius: 0 0 2px 2px;
+    box-shadow: 0 2px 6px rgba(33, 31, 26, 0.18);
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: 10;
+}
+
+.suggestion {
+    padding: 8px 12px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* the arrow keys and the mouse highlight the same way */
+.suggestion:hover, .suggestion.active { background: var(--wash); }
+
+main {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 24px 16px;
+    min-height: 70vh;
+}
+
+.hero {
+    text-align: center;
+    padding: 70px 20px;
+    color: #4a463a;
+}
+
+.hero h1 { margin-bottom: 8px; }
+
+.searched-card {
+    display: flex;
+    gap: 20px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 16px;
+}
+
+/* the picture is inside a card-frame now (for the rotate/flip/transform
+   overlay), so the frame owns the column width and the image fills it */
+.searched-card .card-frame {
+    width: 240px;
+    flex-shrink: 0;
+    align-self: flex-start;
+}
+
+.searched-card img {
+    width: 100%;
+    height: auto; /* same story as .result img, the attrs declare 488x680 */
+    display: block;
+    border-radius: 11px; /* real cards have rounded corners, the only round
+                            things on the page on purpose */
+}
+
+.searched-info h1 { margin: 4px 0 2px 0; }
+
+.mana {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    color: var(--muted);
+    font-weight: normal;
+}
+
+.type-line { color: var(--muted); margin: 4px 0 12px 0; }
+
+/* the rules text is one div per line now so lines can be clicked. the
+   searchable ones are the line picker, the plain ones just sit there */
+.oracle { line-height: 1.55; }
+
+.oracle-plain {
+    padding: 2px 6px;
+    margin: 2px 0;
+}
+
+.oracle-line {
+    padding: 2px 6px;
+    margin: 2px 0;
+    border-radius: 2px;
+    cursor: pointer;
+}
+
+.oracle-line:hover { background: var(--wash); }
+
+.oracle-line.picked {
+    background: var(--wash);
+    box-shadow: inset 3px 0 0 var(--teal);
+}
+
+.line-hint {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 10px 0 0 0;
+}
+
+/* the filter bar, a strip under the searched card like scryfall's
+   search options */
+.filter-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 10px 14px;
+    margin-top: 20px;
+    font-size: 14px;
+}
+
+.filter-bar label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.filter-colors {
+    display: inline-flex;
+    gap: 6px;
+    font-weight: 700;
+}
+
+/* the color letters as mana-symbol chips: dark letter on the real symbol
+   background colors. the checkbox hides and the whole chip is the toggle,
+   faded means off, the double ring means on */
+.filter-colors label {
+    position: relative;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    justify-content: center;
+    border: 1px solid rgba(33, 31, 26, 0.3);
+    color: #1c1a15;
+    font-size: 13px;
+    opacity: 0.45;
+}
+
+.filter-colors label:hover { opacity: 0.75; }
+
+.filter-colors label:has(input:checked) {
+    opacity: 1;
+    box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ink);
+}
+
+.filter-colors label:has(input:focus-visible) {
+    outline: 2px solid var(--teal);
+    outline-offset: 4px;
+}
+
+.filter-colors input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.ci-w { background: #f2edd7; }
+.ci-u { background: #b5cde3; }
+.ci-b { background: #cac5c0; }
+.ci-r { background: #efa088; }
+.ci-g { background: #a5c095; }
+
+.filter-prices { display: inline-flex; align-items: center; gap: 6px; }
+
+.filter-bar input[type="number"] {
+    width: 72px;
+    padding: 4px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    background: #fffef9;
+}
+
+.filter-bar select {
+    padding: 4px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    background: #fffef9;
+}
+
+.filter-bar button {
+    background: var(--teal);
+    color: white;
+    border: 0;
+    border-radius: 2px;
+    padding: 6px 16px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.filter-bar button:hover { background: var(--teal-hover); }
+
+h2 {
+    margin-top: 36px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 8px;
+}
+
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.result img {
+    width: 100%;
+    height: auto; /* the imgs carry width/height attributes for the browser's
+                     sake, this keeps the scaled height following the ratio */
+    display: block;
+    border-radius: 4.75% / 3.5%; /* the magic card corner radius, took a while to eyeball this */
+    transition: transform .1s;
+}
+
+.result img:hover { transform: scale(1.03); }
+
+.result-name {
+    font-family: var(--serif);
+    font-weight: 600;
+    margin-top: 8px;
+    font-size: 15px;
+    line-height: 1.25;
+}
+
+.percent {
+    float: right;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    color: var(--gold);
+}
+
+.result-price {
+    color: #33774d;
+    font-size: 13px;
+    margin-top: 2px;
+}
+
+/* edhrec popularity, riding along the price row. muted grey so the price
+   stays the number the eye lands on, and it has a tooltip so the bare
+   number isn't a mystery */
+.result-rank {
+    color: var(--muted);
+    margin-left: 8px;
+    cursor: help;
+}
+
+.match-line {
+    color: var(--muted);
+    font-size: 12.5px;
+    font-style: italic;
+    margin-top: 2px;
+    cursor: help; /* it has a hover tooltip, match the concept line's ? cursor */
+}
+
+/* the mechanics <-> concepts slider in the filter bar */
+.blend-slider input[type="range"] {
+    width: 100px;
+    accent-color: var(--teal);
+}
+
+/* the filter box: scryfall syntax applied to the results. it grows to eat
+   whatever room the bar has left, its the headline control */
+.filter-query {
+    flex: 1;
+    min-width: 260px;
+    padding: 6px 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    font-size: 13.5px;
+    font-family: ui-monospace, Consolas, monospace;
+    background: #fffef9;
+}
+
+.filter-query:focus {
+    outline: none;
+    border-color: var(--teal);
+}
+
+/* the fold-out extra filters panel. the summary line starts its own row of
+   the filter bar, the open panel drops below it so each control gets room
+   for its explanation.
+   the basis is what breaks that row: a whole line minus a slot is always too
+   wide to sit beside the filter box, so the panel wraps, and the slot is what
+   min match, sort and apply need (~385px, rounded up for slack). they land
+   beside it and the panel grows into whatever they leave, back to full width
+   on /unique where there are none */
+.adv-filters {
+    flex: 1 1 calc(100% - 440px);
+}
+
+.adv-filters summary {
+    cursor: pointer;
+    color: var(--teal);
+    font-size: 14px;
+    width: max-content;
+}
+
+/* sort and apply, parked at the right end of the extra filters row. they
+   stay level with the summary instead of centering when the panel opens */
+.filter-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    align-self: flex-start;
+}
+
+.adv-grid {
+    margin-top: 8px;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 8px 16px;
+    align-items: center;
+}
+
+.adv-row {
+    display: contents;
+}
+
+.adv-row p {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--muted);
+}
+
+.adv-row code {
+    background: #eee7d3;
+    padding: 0 4px;
+    border-radius: 2px;
+}
+
+/* ---- the /guide page: plain sections plus one annotated demo card ---- */
+
+.guide {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.guide h2 {
+    margin-top: 28px;
+}
+
+.guide code {
+    background: #eee7d3;
+    padding: 1px 5px;
+    border-radius: 2px;
+    font-size: 13px;
+}
+
+/* the demo result sits next to a numbered legend. the dots share the site
+   teal so the numbers read as markers, not content */
+.guide-demo {
+    display: flex;
+    gap: 24px;
+    align-items: flex-start;
+    margin: 12px 0;
+}
+
+.guide-demo .result {
+    width: 240px;
+    flex-shrink: 0;
+}
+
+.guide-demo .report-flag.guide-static {
+    opacity: 1;
+    pointer-events: none;
+}
+
+/* the transform/rotate/flip control fades in on hover on real pages; the
+   guide pins it visible so the legend has something to point at */
+.guide-demo .card-overlay.guide-static-overlay {
+    opacity: 1;
+    align-items: center;
+}
+
+.guide-demo .guide-static-overlay button { cursor: default; }
+
+.guide-dot {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    margin-left: 6px;
+    border-radius: 50%;
+    background: var(--teal);
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 18px;
+    text-align: center;
+}
+
+.guide-dot-flag {
+    position: absolute;
+    bottom: 20px
+}
+
+.guide-legend {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.guide-legend li {
+    margin-bottom: 10px;
+}
+
+/* the "min match relaxed while blending" note under the filter bar */
+.min-note {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: 6px 0 0;
+}
+
+.min-note button {
+    font-size: 12px;
+    cursor: pointer;
+}
+
+/* a pure concept match's badge: teal against the rules-side gold, so the
+   two kinds of number read differently at a glance */
+.percent.concept {
+    color: var(--teal);
+    cursor: help;
+}
+
+/* the shared community tags under a result, why the concepts side ranked it */
+.concept-tags {
+    color: var(--teal);
+    font-size: 12px;
+    margin-top: 2px;
+    cursor: help;
+}
+
+/* the tap-to-show stand-in for title tooltips on touch screens (cards.js
+   builds these). pre-line keeps the line breaks in the "+n more" pair list */
+.tap-tip {
+    background: var(--ink);
+    color: #ece7d8;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: normal;
+    border-radius: 3px;
+    padding: 6px 8px;
+    margin-top: 4px;
+    white-space: pre-line;
+}
+
+/* the "+2 more matching lines" hint, the pairs live in its tooltip */
+.more-lines {
+    color: var(--gold);
+    font-size: 12px;
+    margin-top: 2px;
+    cursor: help;
+}
+
+.load-more-wrap {
+    text-align: center;
+    margin: 28px 0 8px 0;
+}
+
+#load-more {
+    background: var(--teal);
+    color: white;
+    border: 0;
+    border-radius: 2px;
+    padding: 10px 32px;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+#load-more:hover { background: var(--teal-hover); }
+
+/* the line in the grid where results drop below the minimum match. spans
+   the full row so it reads as a section break */
+.weak-divider {
+    grid-column: 1 / -1;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: 6px;
+    margin-top: 8px;
+}
+
+.message {
+    background: #fbf1ec;
+    border: 1px solid #e0c3b4;
+    padding: 12px 16px;
+    border-radius: 3px;
+}
+
+footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 24px;
+}
+
+footer a { color: var(--teal); }
+
+/* ---- the home page. flat ink instead of the old gradient, with a grain
+   texture and a faint glow behind the search so it doesn't read as a raw
+   css fill. the grain is an inline svg turbulence tile ---- */
+
+body.home {
+    background-color: var(--ink);
+    background-image:
+        radial-gradient(ellipse 90% 55% at 50% 38%, rgba(236, 231, 216, 0.07), transparent 70%),
+        url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='160'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.9'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='saturate'%20values='0'/%3E%3C/filter%3E%3Crect%20width='160'%20height='160'%20filter='url(%23n)'%20opacity='0.05'/%3E%3C/svg%3E");
+    color: #ece7d8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+body.home main {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: none;
+    width: 100%;
+}
+
+.home-hero {
+    position: relative;
+    text-align: center;
+    width: 100%;
+    max-width: 760px;
+    padding: 60px 20px 80px 20px;
+}
+
+.home-logo { width: 90px; height: 90px; }
+
+.home-title {
+    margin: 8px 0 4px 0;
+    font-size: 52px;
+    color: #f3eedd;
+}
+
+/* the tagline in italic serif, so it reads like flavor text */
+.home-tag {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 17px;
+    color: #c6c0ad;
+    margin: 0 auto 28px auto;
+    max-width: 440px;
+}
+
+/* the big search bar. light on the dark page so its unmissable, the small
+   header bars on the light pages are the inverse of this on purpose */
+.home-search {
+    max-width: 560px;
+    margin: 0 auto;
+    position: relative;
+    /* above the recent-search chips AND the home buttons: at the buttons'
+       old equal z-index they painted over the suggestions dropdown (later
+       in the DOM wins a tie) and ate clicks on the second option */
+    z-index: 3;
+}
+
+.home-search input {
+    padding: 13px 16px;
+    font-size: 17px;
+    border-radius: 2px 0 0 2px;
+}
+
+.home-search button {
+    padding: 13px 26px;
+    font-size: 17px;
+    border-radius: 0 2px 2px 0;
+}
+
+.home-search #suggestions { text-align: left; color: var(--text); }
+
+/* the row under the search bar that future buttons slot into. quiet text
+   links instead of the old glass pills */
+.home-buttons {
+    margin-top: 26px;
+    display: flex;
+    justify-content: center;
+    gap: 28px;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 2;
+}
+
+.home-buttons a {
+    color: #ece7d8;
+    text-decoration: none;
+    font-size: 15px;
+    padding: 4px 2px;
+    border-bottom: 1px solid rgba(236, 231, 216, 0.35);
+}
+
+.home-buttons a:hover { border-bottom-color: #ece7d8; }
+
+/* the recent searches resting around the edges of the screen. the layer
+   spans the whole viewport (not the 760px hero) so the slots sit far out
+   from the search bar instead of crowding it. pointer-events flips off on
+   the layer and back on for the chips, otherwise the invisible layer would
+   eat clicks and text selection over the hero */
+#recent-floats {
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* italic serif and a slight lean each, so they read as scattered card
+   names instead of ui chrome */
+.float-chip {
+    position: absolute;
+    pointer-events: auto;
+    font-family: var(--serif);
+    font-style: italic;
+    color: #a8b4ac;
+    font-size: 15px;
+    text-decoration: none;
+    white-space: nowrap;
+    /* long card names get cut instead of stretching toward the middle */
+    max-width: 230px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0.9;
+}
+
+.float-chip:nth-child(odd) { transform: rotate(-2deg); }
+
+.float-chip:nth-child(even) { transform: rotate(1.5deg); }
+
+.float-chip:hover {
+    color: #fff;
+    opacity: 1;
+    text-decoration: underline;
+}
+
+body.home footer { color: #a09a88; }
+
+body.home footer a { color: #c6c0ad; }
+
+/* ---- the /unique page ---- */
+
+.unique-intro { max-width: 720px; }
+
+.unique-intro h1 { margin-bottom: 8px; }
+
+.unique-intro p { color: #4a463a; }
+
+.unique-status {
+    color: var(--muted);
+    font-size: 13.5px;
+    margin: 18px 0 0 0;
+    text-align: center;
+}
+
+/* the one dealt card, front and center like scryfall's random page */
+.unique-single {
+    max-width: 300px;
+    margin: 18px auto 0 auto;
+}
+
+/* the deal + history row. it lives above the card so it never moves when a
+   new card loads, spamming repeat needs zero scrolling */
+.unique-controls {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+#unique-again {
+    background: var(--teal);
+    color: white;
+    border: 0;
+    border-radius: 2px;
+    padding: 10px 32px;
+    font-size: 15px;
+    cursor: pointer;
+}
+
+#unique-again:hover { background: var(--teal-hover); }
+
+/* the trail arrows */
+#unique-back, #unique-fwd {
+    background: var(--panel);
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 10px 16px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#unique-back:hover:enabled, #unique-fwd:hover:enabled { border-color: #a89d84; color: var(--text); }
+
+#unique-back:disabled, #unique-fwd:disabled { opacity: 0.35; cursor: default; }
+
+/* sideways cards (battles, split cards) start vertical like everything
+   else, the rotate button adds this class to lay them readable. the wrapper
+   flips to landscape proportions and the image gets rotated into it: the
+   width is the card's own aspect ratio (488/680) so after the 90 degree
+   turn it fills the box exactly */
+.card-frame.sideways {
+    aspect-ratio: 680 / 488;
+    overflow: hidden;
+}
+
+.card-frame.sideways img {
+    width: 71.76%;
+    transform: rotate(90deg) translateY(-100%);
+    transform-origin: top left;
+}
+
+/* kamigawa flip cards read upside down in their bottom half, so their
+   rotate is a 180 */
+.card-frame.flipped img { transform: rotate(180deg); }
+
+/* the zoom-on-hover from the results grid would overwrite the rotation
+   transforms, so rotated cards keep their rotation instead */
+.card-frame.sideways img:hover { transform: rotate(90deg) translateY(-100%); }
+
+.card-frame.flipped img:hover { transform: rotate(180deg); }
+
+/* the rotate / flip / transform buttons, an overlay that fades in when the
+   mouse is over the picture. translucent and hugging the bottom edge so it
+   never really covers the art, and absolutely positioned so no layout
+   anywhere has to know whether a card has buttons.
+   the aspect ratio is a magic card's (scryfall's normal images are 488x680):
+   the frame owns its height before a single image byte arrives, so the grid
+   doesn't jump around while pictures load. the sideways class swaps in the
+   landscape ratio, its selector is more specific so it wins */
+.card-frame {
+    position: relative;
+    aspect-ratio: 488 / 680;
+}
+
+.card-overlay {
+    position: absolute;
+    bottom: 5%;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    /* never clickable itself: invisible it must not steal clicks from the
+       card link, and visible the strip spans the frame's whole width and
+       would sit on top of the report ? in the corner */
+    pointer-events: none;
+}
+
+.card-frame:hover .card-overlay { opacity: 1; }
+
+.card-frame:hover .card-overlay button { pointer-events: auto; }
+
+.card-overlay button {
+    background: rgba(36, 51, 63, 0.65);
+    color: white;
+    border: 0;
+    border-radius: 2px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.card-overlay button:hover { background: rgba(36, 51, 63, 0.92); }
+
+/* start over lives in its own quiet corner way below the repeat button so a
+   misclick can't nuke the seen list, and it looks nothing like the teal
+   action buttons on purpose */
+.unique-reset-wrap {
+    text-align: center;
+    margin-top: 120px;
+}
+
+#unique-reset {
+    background: var(--panel);
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 8px 24px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#unique-reset:hover { border-color: #a89d84; color: var(--text); }
+
+.more-lines a { color: var(--gold); }
+
+/* ---- the feedback loop: report flags, the report bar, /admin ---- */
+
+/* the "expected a card that isn't here?" link riding the results heading */
+.report-open {
+    float: right;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-weight: normal;
+    font-size: 13px;
+    color: var(--teal);
+    text-decoration: none;
+    margin-top: 8px;
+}
+
+.report-open:hover { text-decoration: underline; }
+
+/* the flag on each result: a small ? riding the bottom-right corner of the
+   art, invisible until the card is hovered (like the rotate/transform
+   overlay) so the grid doesn't read as a wall of complaints. pointer-events
+   flips with the opacity so the invisible button never steals clicks from
+   the card link */
+.report-flag {
+    position: absolute;
+    bottom: 4%;
+    right: 4%;
+    width: 26px;
+    height: 26px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(36, 51, 63, 0.65);
+    color: white;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+}
+
+.card-frame:hover .report-flag {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.report-flag:hover { background: #c23c2e; }
+
+/* no hover on touch screens, so the flag stays faintly visible there */
+@media (hover: none) {
+    .report-flag {
+        opacity: 0.7;
+        pointer-events: auto;
+    }
+}
+
+/* the card a misplaced report is about */
+.result.flagged {
+    outline: 2px solid #c23c2e;
+    outline-offset: 4px;
+    border-radius: 2px;
+}
+
+#report-bar {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 12px 16px;
+    margin: 14px 0;
+    font-size: 14px;
+}
+
+#report-title { margin: 0 0 10px 0; font-weight: 600; }
+
+.report-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.report-pick {
+    position: relative;
+    display: flex;
+    flex: 1;
+    min-width: 220px;
+}
+
+/* display: flex above would override the hidden attribute's display: none
+   (author rules beat the browser's [hidden] rule), so misplaced reports
+   would still show the card-name box. this puts hidden back in charge */
+.report-pick[hidden] { display: none; }
+
+.report-pick input {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    font-size: 14px;
+    background: #fffef9;
+}
+
+#report-reason {
+    flex: 2;
+    min-width: 220px;
+    padding: 8px 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+    background: #fffef9;
+}
+
+#report-send {
+    background: var(--teal);
+    color: white;
+    border: 0;
+    border-radius: 2px;
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#report-send:hover { background: var(--teal-hover); }
+
+#report-cancel, .fb-quiet {
+    background: var(--panel);
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 8px 14px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+#report-cancel:hover, .fb-quiet:hover { border-color: #a89d84; color: var(--text); }
+
+.report-why {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin: 10px 0 0 0;
+}
+
+#report-msg {
+    margin: 10px 0 0 0;
+    padding: 8px 12px;
+    border-radius: 2px;
+}
+
+#report-msg.good { background: #eef4e6; border: 1px solid #c2d4ad; }
+
+#report-msg.bad { background: #fbf1ec; border: 1px solid #e0c3b4; }
+
+/* the /admin review page */
+.fb-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 12px 16px;
+    margin-top: 14px;
+}
+
+.fb-head {
+    display: flex;
+    justify-content: space-between;
+    color: var(--muted);
+    font-size: 12.5px;
+}
+
+.fb-cards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-top: 10px;
+}
+
+.fb-card {
+    width: 150px;
+    font-size: 13px;
+    text-align: center;
+}
+
+.fb-card img {
+    width: 100%;
+    height: auto;
+    border-radius: 4.75% / 3.5%;
+}
+
+.fb-role {
+    color: var(--muted);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.fb-meta {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+}
+
+.fb-actions, .fb-done-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.fb-actions button[value="accepted"] {
+    background: #2c7d4e;
+    color: white;
+    border: 0;
+    border-radius: 2px;
+    padding: 8px 18px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.fb-actions button[value="accepted"]:hover { background: #35935d; }
+
+.fb-done-row {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 3px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.fb-export pre {
+    background: var(--ink);
+    color: #ece7d8;
+    padding: 14px;
+    border-radius: 3px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    line-height: 1.5;
+}
+
+/* under ~900px the side bands cant stay far from the centered hero, and
+   "nowhere near the search bar" beats "technically visible", so they go */
+@media (max-width: 900px) {
+    .float-chip { display: none; }
+}
+
+@media (max-width: 600px) {
+    .searched-card { flex-direction: column; }
+    .searched-card .card-frame { width: 100%; }
+    .header-inner { flex-wrap: wrap; }
+    .home-title { font-size: 40px; }
+}

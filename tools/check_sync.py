@@ -39,9 +39,9 @@ def assign_value(path, name):
     return None
 
 
-def same(what, a, b):
+def same(what, a, b, where="between web/ and its source of truth"):
     if a is not None and b is not None and a != b:
-        problems.append(what + " drifted between web/ and its source of truth")
+        problems.append(what + " drifted " + where)
 
 
 #the line cleaner: it must clean exactly like the ingest did, or the line
@@ -57,6 +57,12 @@ if read("web/prefix_words.py") != read("common/prefix_words.py"):
 same("CALIBRATION seed", assign_value("web/app.py", "CALIBRATION"), assign_value("common/concept.py", "CALIBRATION"))
 same("MECH_CALIBRATION seed", assign_value("web/app.py", "MECH_CALIBRATION"), assign_value("ingest/update.py", "MECH_CALIBRATION"))
 same("MIN_CONCEPT", assign_value("web/app.py", "MIN_CONCEPT"), assign_value("common/concept.py", "MIN_CONCEPT"))
+
+#the report bakeoff scores pairs the way the site does, with its own copies
+#of the two scoring functions
+for fn in ("line_weight", "mech_display"):
+    same(fn, func_dump("finetune/pairs_bakeoff.py", fn), func_dump("web/app.py", fn),
+         "between finetune/pairs_bakeoff.py and web/app.py")
 
 if problems:
     for p in problems:
