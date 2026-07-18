@@ -296,11 +296,48 @@ main {
     background: #fffef9;
 }
 
+/* selects lose the os chrome and get an ink chevron drawn in */
 .filter-bar select {
-    padding: 4px 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 4px 24px 4px 8px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    background: #fffef9 url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='10'%20height='6'%3E%3Cpath%20d='M1%201l4%204%204-4'%20fill='none'%20stroke='%2324333f'%20stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 8px center;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.filter-bar input[type="number"]:focus,
+.filter-bar select:focus {
+    outline: none;
+    border-color: var(--teal);
+}
+
+/* the toggle checkboxes, drawn to match. the mana chips' hidden inputs
+   match this selector too, but they're invisible so nothing shows */
+.filter-bar input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px;
+    height: 15px;
+    margin: 0;
     border: 1px solid var(--line-strong);
     border-radius: 2px;
     background: #fffef9;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.filter-bar input[type="checkbox"]:checked {
+    background: var(--teal) url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='10'%20height='8'%3E%3Cpath%20d='M1%204l3%203%205-6'%20fill='none'%20stroke='white'%20stroke-width='2'/%3E%3C/svg%3E") no-repeat center;
+    border-color: var(--teal);
+}
+
+.filter-bar input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
 }
 
 .filter-bar button {
@@ -376,10 +413,56 @@ h2 {
     cursor: help; /* it has a hover tooltip, match the concept line's ? cursor */
 }
 
-/* the mechanics <-> concepts slider in the filter bar */
+/* the mechanics <-> concepts slider in the filter bar, drawn by hand so
+   the track and thumb carry the palette instead of the browser's chrome.
+   webkit and firefox each need their own pseudo-element pair */
 .blend-slider input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
     width: 100px;
-    accent-color: var(--teal);
+    height: 14px;
+    background: transparent;
+}
+
+.blend-slider input[type="range"]::-webkit-slider-runnable-track {
+    height: 4px;
+    background: var(--line-strong);
+    border-radius: 2px;
+}
+
+.blend-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    margin-top: -5px; /* (thumb - track) / 2, webkit doesn't center it for you */
+    border-radius: 50%;
+    background: var(--teal);
+    cursor: pointer;
+}
+
+.blend-slider input[type="range"]:hover::-webkit-slider-thumb { background: var(--teal-hover); }
+
+.blend-slider input[type="range"]::-moz-range-track {
+    height: 4px;
+    background: var(--line-strong);
+    border-radius: 2px;
+}
+
+.blend-slider input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--teal);
+    cursor: pointer;
+}
+
+.blend-slider input[type="range"]:hover::-moz-range-thumb { background: var(--teal-hover); }
+
+.blend-slider input[type="range"]:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
 }
 
 /* the filter box: scryfall syntax applied to the results. it grows to eat
@@ -536,7 +619,14 @@ h2 {
 .min-note button {
     font-size: 12px;
     cursor: pointer;
+    background: #fffef9;
+    color: var(--muted);
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+    padding: 2px 10px;
 }
+
+.min-note button:hover { border-color: #a89d84; color: var(--text); }
 
 /* a pure concept match's badge: teal against the rules-side gold, so the
    two kinds of number read differently at a glance */
