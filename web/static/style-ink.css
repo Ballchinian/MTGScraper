@@ -484,16 +484,12 @@ h2 {
     outline-offset: 2px;
 }
 
-/* the bar lays out as two rows, the same shape on /search and /unique: the
-   filter box alone on top, then the extra-filters fold, the blend slider
-   and (on /search only) the actions underneath. flex order does the
-   arranging so the shared markup and its tab order stay put.
-   the fold opens down the left edge, under the filter box it belongs to,
-   and the slider rides the right end with the actions */
-.blend-slider {
-    order: 2;
-    align-self: flex-start; /* stay level with the summary when the panel opens */
-}
+/* the bar lays out in rows, the same shape on /search and /unique: the
+   filter box alone on top, then the extra-filters fold with the blend
+   slider beside it at the left, and (on /search only) min match, sort and
+   apply as a cluster at the right. flex order does the arranging so the
+   shared markup and its tab order stay put */
+.blend-slider { order: 2; }
 
 /* the filter box: scryfall syntax applied to the results. the headline
    control, so the full-width basis gives it the top row to itself */
@@ -513,15 +509,12 @@ h2 {
     border-color: var(--teal);
 }
 
-/* the fold-out extra filters panel. the summary opens the bottom row at the
-   left, the open panel drops below it so each control gets room for its
-   explanation.
-   the basis is the row math: the slider (~230px) and the actions (~385px,
-   /search only) sit to its right, rounded up for slack, and the panel grows
-   into whatever they leave, wider on /unique where there are no actions */
+/* the fold-out extra filters panel. the summary opens the middle row at the
+   left with the slider next to it, so it sits no wider than its own word */
 .adv-filters {
-    flex: 1 1 calc(100% - 660px);
+    flex: 0 1 auto;
     order: 1;
+    margin-right: 20px;
 }
 
 .adv-filters summary {
@@ -531,14 +524,14 @@ h2 {
     width: max-content;
 }
 
-/* min match, sort and apply, parked at the right end of the bottom row past
-   the slider. they stay level with the summary instead of centering when
-   the panel opens */
+/* min match, sort and apply, one cluster at the right end of the row with
+   apply last. the auto margin is the gap: it eats the leftover width that
+   nothing else wants, so the fold and the slider stay put at the left */
 .filter-actions {
     display: inline-flex;
     align-items: center;
     gap: 12px;
-    align-self: flex-start;
+    margin-left: auto;
     order: 3;
 }
 
