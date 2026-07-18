@@ -154,13 +154,12 @@ main {
 
 .hero h1 { margin-bottom: 8px; }
 
+/* no tray around this: print groups with whitespace and alignment, not
+   boxes, and the card picture anchors the section by itself */
 .searched-card {
     display: flex;
     gap: 20px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    padding: 16px;
+    padding: 16px 0;
 }
 
 /* the picture is inside a card-frame now (for the rotate/flip/transform
@@ -237,15 +236,16 @@ main {
 
 /* the filter bar, a strip under the searched card like scryfall's
    search options */
+/* the widgets carry their own hand-drawn borders, so the bar needs no tray
+   of its own: it sits on the paper, and one rule underneath keeps it
+   reading as a single band, same hairline the results heading rides on */
 .filter-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 12px;
-    background: var(--panel);
-    border: 1px solid var(--line);
-    border-radius: 3px;
-    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    padding: 10px 0 14px 0;
     margin-top: 20px;
     font-size: 14px;
 }
