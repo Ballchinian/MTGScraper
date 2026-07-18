@@ -1372,8 +1372,7 @@ def feedback():
                          (kind, card["oracle_id"], card["name"], expected["oracle_id"], expected["name"],
                           expected_pct, reason, "\n".join(picked), json.dumps(snap), model, ip))
             return {"ok": True, "stored": True,
-                    "msg": "Logged. " + expected["name"] + " only scores " + str(expected_pct) + "% against the " + str(min_pct) +
-                           "% cutoff (for now it's behind the weaker-matches button). Reports like this grade the next model."}
+                    "msg": "Thanks for the input. Reports like this grade the next model."}
 
         #misplaced: the flagged card plus a few words on why it doesn't belong
         try:

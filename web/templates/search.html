@@ -64,9 +64,9 @@
                 </div>
                 <p class="line-hint">
                     {% if picked_count %}
-                    searching only the highlighted lines, click a line to pick or unpick it
+                    only the highlighted lines are searching, clicking toggles them
                     {% else %}
-                    click a line to search just that ability, click more to combine them
+                    every line here is clickable: search one ability on its own, or a few together
                     {% endif %}
                 </p>
             </div>
@@ -99,12 +99,12 @@
            the url: keep-min writes min=80 into it, drop-min takes min back
            out so the server picks the fitting default again #}
         {% if min_auto %}
-        <p class="min-note">min match relaxed to {{ min_pct }}% while blending, since blended scores average the two axes.
+        <p class="min-note">min match slid to {{ min_pct }}% to fit the blend, blended scores are averages and averages land lower.
             <button type="button" id="keep-min">keep it at 80%</button></p>
         {% endif %}
         {% if min_override %}
         <p class="min-note">min match stays at {{ min_pct }}% because you set it.
-            <button type="button" id="drop-min">back to the default {{ min_default }}%</button></p>
+            <button type="button" id="drop-min">let the default {{ min_default }}% decide again</button></p>
         {% endif %}
 
         <h2>Cards that do something similar
@@ -134,7 +134,7 @@
         </div>
 
         {% if not results %}
-        <p class="message">Nothing matched with the current filters{% if min_pct > 0 %} at {{ min_pct }}%+ match{% endif %}. Try loosening them.</p>
+        <p class="message">Nothing matched with these filters{% if min_pct > 0 %} at {{ min_pct }}%{% endif %}.</p>
         {% endif %}
         <div class="card-grid">
             {% for r in results %}
@@ -407,10 +407,10 @@
             flagged = flag || null;
             if (flagged) {
                 flagged.el.classList.add("flagged");
-                reportTitle.textContent = 'You flagged "' + flagged.name + '" as a bad match. Say a few words about why.';
+                reportTitle.textContent = 'You flagged "' + flagged.name + '" as a bad match. Please put a small description about why it\'s bad.';
                 reportReason.placeholder = "why is it a bad match?";
             } else {
-                reportTitle.textContent = "Which card did you expect to see? It gets checked against your filters and the matcher, and real gaps are logged.";
+                reportTitle.textContent = "Which card should be here? It gets checked against your filters first, and only real gaps reach the log.";
                 reportReason.placeholder = "(optional) anything else worth knowing?";
             }
             //missing reports name a card, misplaced ones only explain
