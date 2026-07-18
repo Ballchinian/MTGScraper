@@ -26,7 +26,7 @@
        trail of everything this browser has been dealt #}
     <div class="unique-controls">
         <button id="unique-back" title="the previous card you were dealt">&#9664;</button>
-        <button id="unique-again">Repeat this search</button>
+        <button id="unique-again" title="deal another unseen card that fits this search">Repeat this search</button>
         <button id="unique-fwd" title="the next card in your trail">&#9654;</button>
     </div>
 
@@ -204,6 +204,27 @@ form.elements.cur.onchange = function() {
     }
 };
 
+/*
+    the button's label: it opens saying what it does, and once it has been
+    clicked once it stops explaining and just makes the sound of the next
+    card coming off the deck. the title above keeps the plain meaning
+*/
+var SOUNDS = ["BAA", "BANG!", "BEEP!", "BLOOP", "BOING", "BOOM!", "BOP", "BRRING", "BUZZ", "CHING!", "CLANG!", "CLINK", "CLUNK", "DING!", "DONG!", "DOORAH", "BEEP BOP", "BEEP BOP BEEP BOP", "BEEP BOP BEEP BOP BEEP BOP","HONK!", "KABOOM!", "KACHING!", "KLANG!", "KLUNK!", "PING!", "PLONK!", "POW!", "POP!", "KACHOW"]
+var clicked = false;
+var lastSound = "";
+
+function dealLabel() {
+    if (!clicked) {
+        return "Repeat this search";
+    }
+    var s;
+    do {
+        s = SOUNDS[Math.floor(Math.random() * SOUNDS.length)];
+    } while (s == lastSound);
+    lastSound = s;
+    return s;
+}
+
 var dealing = false;
 function dealOne() {
     if (dealing) {
@@ -222,7 +243,7 @@ function dealOne() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             dealing = false;
-            againBtn.textContent = "Repeat this search";
+            againBtn.textContent = dealLabel();
             if (data.cards.length) {
                 var c = data.cards[0];
                 cache[c.oracle_id] = c;
@@ -247,11 +268,17 @@ function dealOne() {
         });
 }
 
+//the deal on load doesn't count as a click, the label only switches to
+//noises once the user has pressed the button themselves
 form.onsubmit = function(e) {
     e.preventDefault();
+    clicked = true;
     dealOne();
 };
-againBtn.onclick = dealOne;
+againBtn.onclick = function() {
+    clicked = true;
+    dealOne();
+};
 
 document.getElementById("unique-reset").onclick = function() {
     //this forgets everything, hence the speed bump
