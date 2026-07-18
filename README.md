@@ -10,16 +10,17 @@ A web app that finds Magic: The Gathering cards that do similar things to the ca
 - Line picker: click any of the searched card's rules lines to search just that ability (or combine several), and the URL stays shareable
 - Filters: color identity (fits-within, like deckbuilding), price range, mana value range, card type, commanders only (legendary creatures), hide game changers, and cards that aren't commander legal stay hidden unless you tick "include illegal"
 - Results below 80% match (adjustable in the filter bar) wait behind a "show weaker matches" button at the end of the list, so weak coincidences never crowd out real matches but nothing is unreachable
-- Sort by best match or by price, in dollars or euros, with prices refreshed from Scryfall daily
+- Sort by best match, by price (in dollars or euros, refreshed from Scryfall daily), by how much a card actually gets played (most or least, from EDHREC rank), or by release date, newest or oldest first
 - Results that match several of your card's lines say so ("+2 more matching lines")
 - Load more button that pulls the next 20 results without a page reload
-- Scryfall styled interface with card images linking back to Scryfall
-- A landing page with the recent cards you searched floating around the search bar, click one to run it again
+- An ink and paper skin with the filter widgets drawn by hand and the real mana symbols on the color checkboxes and cost lines (Scryfall's SVGs, self hosted), and every card image links back to Scryfall
+- A landing page with the recent cards you searched floating around the search bar, click one to run it again, and before you have a history much-played cards fill the slots so the room is never empty
 - Unique cards: the counterpart to a random card page. It deals one random card nothing else in the game resembles the moment you arrive, with a repeat button, an adjustable uniqueness bar, the same filters as search, and a per-device memory so you never get dealt the same card twice (until you start over)
 - The dealt cards form a trail: back/forward arrows revisit everything you've ever been dealt
 - Every card picture on the site (the searched card, the results grid, the unique page) gets hover buttons where the physical card needs them: sideways cards (battles, split cards) stay vertical so the grid reads uniform, with rotate to turn them readable, Kamigawa flip cards flip 180, double faced cards transform. Invasion of Zendikar does all of it at once
 - Updates itself! A bot checks Scryfall every day and new cards just appear
 - Bad results are reportable: every result carries a quiet "shouldn't be here?" flag and the results heading an "expected a card that isn't here?" link. Reports about filters get answered on the spot, real matching gaps become test cases for the next model
+- Links unfurl: every page carries Open Graph tags, so pasting a card's results into Discord shows the card's image and what the page is. Each card has one canonical URL no matter which filters found it, and a sitemap plus breadcrumbs hand search engines the whole card pool without making them walk result pages
 
 ## How it works
 
@@ -37,13 +38,13 @@ Three pieces:
 
 ### The database
 
-Five tables. `cards` has one row per unique card, keyed by Scryfall's `oracle_id` (stable across every printing), including the filter columns: color identity, USD and EUR prices, mana value, the official Commander game changer flag and commander legality. `lines` has one row per line of rules text with its embedding. `line_stats` counts how many cards share each exact line, for the ranking weights. `meta` remembers which Scryfall bulk file was processed last and which model made the vectors. `feedback` holds user reports from the results page (see the feedback loop below).
+Five tables. `cards` has one row per unique card, keyed by Scryfall's `oracle_id` (stable across every printing), including the filter columns: color identity, USD and EUR prices, mana value, the official Commander game changer flag and commander legality, plus the EDHREC rank and first printing date that power the played and release date sorts. `lines` has one row per line of rules text with its embedding. `line_stats` counts how many cards share each exact line, for the ranking weights. `meta` remembers which Scryfall bulk file was processed last and which model made the vectors. `feedback` holds user reports from the results page (see the feedback loop below).
 
 Two derived columns power the unique cards page: `lines.nn_sim` is each line's nearest neighbor similarity (how close the closest line on any *other* card gets), and `cards.uniqueness` rolls that up as 1 minus the card's most isolated line's `nn_sim`, so a card with Flying plus one ability nobody else has still counts as unique, because uniqueness is judged per line, not by the card's best match. The ingest recomputes them whenever lines change, from scratch rather than incrementally: a new card can make an old card less unique and a deleted card can make its old neighbors more unique, so patching only changed rows would quietly rot the scores. The all-pairs math runs as one big numpy matrix multiply on the GitHub Actions runner (about a minute) instead of ~31k pgvector scans (hours of busy production database). All-pairs work belongs next to the big CPU, one-query-at-a-time work belongs next to the data.
 
 Prices show in dollars or euros: a switch in the extra filters panel flips every price on the page, and the price bounds and price sorts follow it, so what you filter on is always the number you see. Prices are the cheapest paper printing in any finish, found by streaming Scryfall's Default Cards file (every printing, a couple of gigabytes) through ijson each day. Digital printings, oversized promos and gold border world championship decks don't count, you can't sleeve those up.
 
-There is deliberately no vector index: at ~61k rows Postgres scans everything in a few milliseconds and the results are exact, identical to the old in-memory version. If the game ever grows 10x there is a commented out HNSW index in `common/schema.sql` ready to go.
+The nearest neighbor scans walk an HNSW index, which turned 200-250ms of vector math per line into about 20ms. The build is deliberately denser than pgvector's defaults (m=32, ef_construction=200): common lines put hundreds of identical embeddings into the graph, the default build leaves those clusters badly connected, and a 94% match once fell out of a top-400 scan because of it. The dense build measured zero misses above 0.90 similarity against the exact scan. Searches use pgvector's iterative scan in strict order, so a heavily filtered search keeps walking the graph until it has real answers instead of coming back short.
 
 ### Daily updates
 
