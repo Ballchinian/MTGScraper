@@ -279,10 +279,9 @@ def concept_between(conn, oracle_a, oracle_b):
     if len(norms) < 2:
         return 0
     shared = conn.execute("""
-        SELECT coalesce(sum(t.idf * t.idf), 0) AS s
+        SELECT coalesce(sum(ca.weight * cb.weight), 0) AS s
         FROM card_tags ca
         JOIN card_tags cb ON cb.tag = ca.tag AND cb.oracle_id = %s
-        JOIN tags t ON t.tag = ca.tag
         WHERE ca.oracle_id = %s""", (oracle_b, oracle_a)).fetchone()["s"]
     return concept_display(shared / (norms[0]["norm"] * norms[1]["norm"]))
 
@@ -794,12 +793,10 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             #through the same filters as everything else
             rows = conn.execute("""
                 WITH anchor AS (
-                    SELECT ct.tag, t.idf FROM card_tags ct
-                    JOIN tags t ON t.tag = ct.tag
-                    WHERE ct.oracle_id = %s
+                    SELECT tag, weight FROM card_tags WHERE oracle_id = %s
                 )
                 SELECT ct.oracle_id, """ + pcol + """ AS price, c.edhrec_rank, c.released_at,
-                       sum(a.idf * a.idf) / (na.norm * nc.norm) AS raw
+                       sum(a.weight * ct.weight) / (na.norm * nc.norm) AS raw
                 FROM card_tags ct
                 JOIN anchor a ON a.tag = ct.tag
                 JOIN cards c ON c.oracle_id = ct.oracle_id
@@ -807,7 +804,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
                 JOIN card_tag_norms na ON na.oracle_id = %s
                 WHERE ct.oracle_id <> %s""" + where + """
                 GROUP BY ct.oracle_id, """ + pcol + """, c.edhrec_rank, c.released_at, na.norm, nc.norm
-                HAVING sum(a.idf * a.idf) / (na.norm * nc.norm) >= %s
+                HAVING sum(a.weight * ct.weight) / (na.norm * nc.norm) >= %s
                 ORDER BY raw DESC
                 LIMIT 300
             """, [oracle_id, oracle_id, oracle_id] + fparams + [concept_raw_gate(min_pct)]).fetchall()
@@ -824,12 +821,10 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             if ids:
                 for r in conn.execute("""
                     WITH anchor AS (
-                        SELECT ct.tag, t.idf FROM card_tags ct
-                        JOIN tags t ON t.tag = ct.tag
-                        WHERE ct.oracle_id = %s
+                        SELECT tag, weight FROM card_tags WHERE oracle_id = %s
                     )
                     SELECT ct.oracle_id,
-                           sum(a.idf * a.idf) / (na.norm * nc.norm) AS raw
+                           sum(a.weight * ct.weight) / (na.norm * nc.norm) AS raw
                     FROM card_tags ct
                     JOIN anchor a ON a.tag = ct.tag
                     JOIN card_tag_norms nc ON nc.oracle_id = ct.oracle_id
@@ -928,9 +923,8 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             for r in conn.execute("""
                 SELECT ct.oracle_id, ct.tag FROM card_tags ct
                 JOIN card_tags a ON a.tag = ct.tag AND a.oracle_id = %s
-                JOIN tags t ON t.tag = ct.tag
                 WHERE ct.oracle_id = ANY(%s)
-                ORDER BY t.idf DESC
+                ORDER BY a.weight * ct.weight DESC
             """, (oracle_id, ids)).fetchall():
                 chips.setdefault(r["oracle_id"], []).append(r["tag"])
 

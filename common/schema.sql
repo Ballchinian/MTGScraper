@@ -155,6 +155,24 @@ CREATE TABLE IF NOT EXISTS card_tags (
 
 CREATE INDEX IF NOT EXISTS card_tags_tag ON card_tags (tag);
 
+--tagger's tags form a tree (see tags.parents): a card tagged gives-nimble is
+--implicitly gives-evasion too. those implied rows live here alongside the
+--real ones with inherited = true, so the scoring queries read card_tags and
+--get the whole concept without knowing the tree exists, while anything that
+--needs what a human actually typed filters on NOT inherited. without this
+--siblings score zero against each other (delney/tetsuko both give evasion
+--and shared nothing), which was two thirds of the axis's linking signal
+ALTER TABLE card_tags ADD COLUMN IF NOT EXISTS inherited boolean NOT NULL DEFAULT false;
+
+--what this card-tag link is worth to the scorer: the tag's idf, halved when
+--the row was inherited rather than typed by a human. rolling up undamped
+--floods every pair with generic ancestors (removal, card-advantage) and the
+--gap between a real match and a generic near-miss collapsed from .199 to
+--.078, so the weights carry the damping and the queries just read it. both
+--sides of a pair can weigh the same tag differently, which is why the
+--numerator is sum(a.weight * b.weight) and not sum(idf * idf)
+ALTER TABLE card_tags ADD COLUMN IF NOT EXISTS weight real NOT NULL DEFAULT 0;
+
 --one row per tag that survived the trivia blocklist: its parents (tagger
 --tags form a hierarchy, kept for rollup scoring later), how many of OUR
 --cards carry it, the idf weight derived from that count (so broad tags like

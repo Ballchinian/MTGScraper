@@ -1,5 +1,8 @@
 #pulls scryfall tagger's community tags (the official oracle_tags bulk file,
 #one download, updated daily) into card_tags + tags for the concept axis.
+#taggings get rolled up the tag tree before anything is counted, so a card
+#tagged gives-nimble is gives-evasion too and the counts, the idf and the
+#norms all agree on that.
 #run it from the repo root like the updater:
 #    python -m ingest.tags
 #with DATABASE_URL set. reruns are free: the meta gate skips the work unless
@@ -33,6 +36,15 @@ BLOCKED_ROOTS = [
     "intervening-if-clause",
 ]
 
+#what an inherited tag is worth next to one a human actually typed. measured
+#against the calibration anchors: undamped rollup left only .078 between a
+#real concept match and a generic near-miss (it was .199 before rollup) and
+#pushed 1 in 1000 random pairs above the near-substitute anchor. 0.5 keeps
+#the sibling links it was all for (delney/tetsuko .000 -> .158) while the
+#random-pair tail lands at .695 against .677 for no rollup at all.
+#changing this means refitting common/concept.py's CALIBRATION
+INHERITED_WEIGHT = 0.5
+
 
 def main():
     db_url = os.environ.get("DATABASE_URL")
@@ -55,11 +67,15 @@ def main():
 
     #same gate as the card updater: seen this exact file already, stop. an
     #empty card_tags table means a first run (or a died-halfway one), do the
-    #work anyway
+    #work anyway. a weight of 0 means the same thing: schema.sql just added
+    #the column and nothing has filled it, and skipping here would leave the
+    #concept axis scoring every pair at zero until scryfall happens to
+    #publish a new tag file
     row = conn.execute("SELECT value FROM meta WHERE key = 'tagger_updated_at'").fetchone()
     if (row and row[0] == updated_at
             and conn.execute("SELECT 1 FROM card_tags LIMIT 1").fetchone()
             and conn.execute("SELECT 1 FROM card_tag_norms LIMIT 1").fetchone()
+            and not conn.execute("SELECT 1 FROM card_tags WHERE weight = 0 LIMIT 1").fetchone()
             and conn.execute("SELECT 1 FROM cards WHERE concept_uniqueness IS NOT NULL LIMIT 1").fetchone()):
         print("already processed the tag file from " + updated_at + ", nothing to do")
         conn.close()
@@ -94,23 +110,53 @@ def main():
             if tagging["oracle_id"] in ours:
                 links.add((tagging["oracle_id"], t["slug"]))
 
-    count_of = {}
-    for oid, slug in links:
-        count_of[slug] = count_of.get(slug, 0) + 1
-
     #parents only count if they survived the blocklist themselves
     kept_ids = {t["id"] for t in kept}
+    parent_of = {}
+    for t in kept:
+        parent_of[t["slug"]] = [by_id[p]["slug"] for p in t.get("parent_ids", []) if p in kept_ids]
+
+    #a tag plus everything above it. the cache doubles as the cycle guard: the
+    #placeholder set is in place before the walk climbs, so a tag that reaches
+    #itself finds a partial answer instead of recursing forever
+    anc_cache = {}
+
+    def ancestors(slug):
+        if slug in anc_cache:
+            return anc_cache[slug]
+        out = {slug}
+        anc_cache[slug] = out
+        for p in parent_of.get(slug, []):
+            out |= ancestors(p)
+        return out
+
+    #the rolled up set is what the whole axis scores on. tagger expects tools
+    #to climb: gives-nimble and gives-unblockable are both gives-evasion, and
+    #matching tag names exactly scored those two zero against each other
+    rolled = set()
+    for oid, slug in links:
+        for a in ancestors(slug):
+            rolled.add((oid, a))
+    print("rolled " + str(len(links)) + " taggings into " + str(len(rolled)) + " card-tag rows")
+
+    #counts come from the rolled set on purpose. idf has to mean "how many
+    #cards have this concept", and dozens of tagger's parent tags carry no
+    #direct taggings at all (recursion, mill): counted raw they land at the
+    #highest idf in the table and drown out every real signal
+    count_of = {}
+    for oid, slug in rolled:
+        count_of[slug] = count_of.get(slug, 0) + 1
+
     tag_rows = []
     for t in kept:
-        parents = [by_id[p]["slug"] for p in t.get("parent_ids", []) if p in kept_ids]
-        tag_rows.append((t["slug"], parents, count_of.get(t["slug"], 0), t.get("description") or ""))
+        tag_rows.append((t["slug"], parent_of[t["slug"]], count_of.get(t["slug"], 0), t.get("description") or ""))
 
     #full rebuild in one transaction, so a crash leaves the old data standing
     with conn.cursor() as cur:
         cur.execute("TRUNCATE card_tags, tags, card_tag_norms")
-        with cur.copy("COPY card_tags (oracle_id, tag) FROM STDIN") as copy:
-            for oid, slug in links:
-                copy.write_row((oid, slug))
+        with cur.copy("COPY card_tags (oracle_id, tag, inherited) FROM STDIN") as copy:
+            for oid, slug in rolled:
+                copy.write_row((oid, slug, (oid, slug) not in links))
         with cur.copy("COPY tags (tag, parents, card_count, description) FROM STDIN") as copy:
             for r in tag_rows:
                 copy.write_row(r)
@@ -118,11 +164,13 @@ def main():
         #card's vector length from those. baked here so every query agrees on
         #them and none has to recompute 31k norms
         cur.execute("UPDATE tags SET idf = ln((SELECT count(*) FROM cards)::float / greatest(card_count, 1))")
+        cur.execute("UPDATE card_tags ct SET weight = t.idf * CASE WHEN ct.inherited THEN %s ELSE 1 END "
+                    "FROM tags t WHERE t.tag = ct.tag", (INHERITED_WEIGHT,))
         cur.execute("""
             INSERT INTO card_tag_norms
-            SELECT ct.oracle_id, sqrt(sum(t.idf * t.idf))
-            FROM card_tags ct JOIN tags t ON t.tag = ct.tag
-            GROUP BY ct.oracle_id
+            SELECT oracle_id, sqrt(sum(weight * weight))
+            FROM card_tags
+            GROUP BY oracle_id
         """)
         cur.execute("""
             INSERT INTO meta (key, value) VALUES ('tagger_updated_at', %s)
@@ -142,11 +190,11 @@ def main():
     idf = {slug: math.log(n_cards / max(count_of.get(slug, 1), 1)) for slug, _, _, _ in tag_rows}
     tag_col = {slug: i for i, slug in enumerate(sorted(idf))}
     card_row = {}
-    for oid, slug in links:
+    for oid, slug in rolled:
         card_row.setdefault(oid, len(card_row))
     m = np.zeros((len(card_row), len(tag_col)), dtype=np.float32)
-    for oid, slug in links:
-        m[card_row[oid], tag_col[slug]] = idf[slug]
+    for oid, slug in rolled:
+        m[card_row[oid], tag_col[slug]] = idf[slug] * (1.0 if (oid, slug) in links else INHERITED_WEIGHT)
     norms = np.linalg.norm(m, axis=1, keepdims=True)
     norms[norms == 0] = 1  #cant happen unless a tag covers every card, but nan poisons everything
     m /= norms

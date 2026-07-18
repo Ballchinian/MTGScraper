@@ -10,16 +10,20 @@
 #purpose: the map is what changes when the scorer improves, the promise
 #"80 means a good match" never does
 
-#raw cosine -> displayed percent, piecewise linear through hand-judged pairs
-#(2026-07-15, scored against the ingested tagger data):
-#  0.55 Shadrix/Gluntch          real concept match, must clear the gate
+#raw cosine -> displayed percent, piecewise linear through hand-judged pairs.
+#refit 2026-07-18 for the rolled up tag vectors (ingest/tags.py walks the tag
+#tree now, so every pair shares more mass and the same judgement lands on a
+#higher raw number). the judged pairs did not move, the map under them did:
+#  0.59 Shadrix/Gluntch          real concept match, must clear the gate
 #  0.68 Boots/Greaves            near-substitutes
-#  0.35 Shadrix/Font of Mythos   close but generic (selective vs blanket hug)
-#  0.22 Bolt/Murder              same family, different everything else
-#  0.10 and below                shared-tag noise
-#provisional seed from 8 judged pairs - refine as axis-2 reports accumulate,
-#the exam in finetune/axis2_bakeoff.py keeps it honest
-CALIBRATION = [(0.0, 0), (0.10, 35), (0.22, 55), (0.35, 70), (0.55, 82), (0.68, 90), (1.0, 100)]
+#  0.45 Shadrix/Font of Mythos   close but generic (selective vs blanket hug)
+#  0.26 Bolt/Murder              same family, different everything else
+#  0.13 and below                shared-tag noise
+#the noise anchor is the only one not measured, its the old 0.10 scaled by
+#the shift the Bolt/Murder anchor took. provisional seed from 8 judged pairs
+#- refine as axis-2 reports accumulate, the exam in finetune/axis2_bakeoff.py
+#keeps it honest
+CALIBRATION = [(0.0, 0), (0.13, 35), (0.26, 55), (0.45, 70), (0.59, 82), (0.68, 90), (1.0, 100)]
 MIN_CONCEPT = 80
 
 
@@ -50,10 +54,9 @@ def raw_sim(conn, oracle_a, oracle_b):
     if len(norms) < 2:
         return 0.0  #one of the cards has no tags at all
     shared = conn.execute("""
-        SELECT coalesce(sum(t.idf * t.idf), 0)
+        SELECT coalesce(sum(ca.weight * cb.weight), 0)
         FROM card_tags ca
         JOIN card_tags cb ON cb.tag = ca.tag AND cb.oracle_id = %s
-        JOIN tags t ON t.tag = ca.tag
         WHERE ca.oracle_id = %s""", (oracle_b, oracle_a)).fetchone()[0]
     return shared / (norms[oracle_a] * norms[oracle_b])
 
@@ -64,12 +67,10 @@ def top_matches(conn, oracle_id, limit=20):
     #anchor's own tags, the norms fold the rest of each vector in
     return conn.execute("""
         WITH anchor AS (
-            SELECT ct.tag, t.idf FROM card_tags ct
-            JOIN tags t ON t.tag = ct.tag
-            WHERE ct.oracle_id = %s
+            SELECT tag, weight FROM card_tags WHERE oracle_id = %s
         )
         SELECT ct.oracle_id,
-               sum(a.idf * a.idf) / (na.norm * nc.norm) AS raw
+               sum(a.weight * ct.weight) / (na.norm * nc.norm) AS raw
         FROM card_tags ct
         JOIN anchor a ON a.tag = ct.tag
         JOIN card_tag_norms nc ON nc.oracle_id = ct.oracle_id
