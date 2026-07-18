@@ -262,9 +262,13 @@ def mech_display(raw):
 #(a 5% step existed once and changed nothing visible, so it went). results
 #are ordered by (1-w) * mech percent + w * concept percent, and once the
 #slider moves the badge shows that same blend, so the list always reads in
-#descending order of the number on it. 0 is the default and leaves the
-#search exactly as it always was
+#descending order of the number on it
 BLEND_WEIGHTS = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+#the middle detent is where a first-time visitor lands: half rules text, half
+#concepts. either pure end is a specialist's view, and someone who has never
+#touched the slider is better served by both axes at once
+BLEND_DEFAULT = 2
 
 
 def concept_between(conn, oracle_a, oracle_b):
@@ -598,16 +602,16 @@ def remember_currency(resp):
 
 def read_blend():
     #the slider's detent, 0 (pure rules text) through 4 (pure concepts).
-    #the url wins, then the remembered cookie, then 0. people who like the
-    #slider somewhere tend to want it there tomorrow too, so the preference
+    #the url wins, then the remembered cookie, then the middle. people who like
+    #the slider somewhere tend to want it there tomorrow too, so the preference
     #survives closing the browser
     raw = request.args.get("blend")
     if raw is None:
-        raw = request.cookies.get("blend", "0")
+        raw = request.cookies.get("blend", str(BLEND_DEFAULT))
     try:
         b = int(raw)
     except ValueError:
-        b = 0
+        b = BLEND_DEFAULT
     return max(0, min(b, len(BLEND_WEIGHTS) - 1))
 
 
