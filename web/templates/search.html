@@ -4,22 +4,27 @@
 
 {% block metadesc %}{% if card %}Magic cards similar to {{ card.name }}: every card whose rules text does the same thing, ranked by how close the meaning is, with prices and filters.{% else %}{{ super() }}{% endif %}{% endblock %}
 
-{% block head_extra %}
+{# a card page unfurls as that card, twitter:card summary keeps the portrait
+   art a thumbnail instead of a letterboxed banner. no card, the site default #}
+{% block og %}
     {% if card %}
-    {# one canonical per card: these results are reachable under any
-       spelling, filter and sort combination in the url, and google should
-       fold them all into this one address. og tags are the unfurl card a
-       pasted link grows in discord and friends, twitter:card summary keeps
-       the portrait art a thumbnail instead of a letterboxed banner #}
-    {% set canonical = request.url_root ~ 'search?q=' ~ (card.name | urlencode) %}
-    <link rel="canonical" href="{{ canonical }}">
     <meta property="og:site_name" content="Delvefall">
     <meta property="og:type" content="website">
     <meta property="og:title" content="{{ card.name }}: cards that do the same thing">
     <meta property="og:description" content="{{ self.metadesc() }}">
     <meta property="og:image" content="{{ card.image }}">
-    <meta property="og:url" content="{{ canonical }}">
+    <meta property="og:url" content="{{ request.url_root ~ 'search?q=' ~ (card.name | urlencode) }}">
     <meta name="twitter:card" content="summary">
+    {% else %}{{ super() }}{% endif %}
+{% endblock %}
+
+{% block head_extra %}
+    {% if card %}
+    {# one canonical per card: these results are reachable under any
+       spelling, filter and sort combination in the url, and google should
+       fold them all into this one address #}
+    {% set canonical = request.url_root ~ 'search?q=' ~ (card.name | urlencode) %}
+    <link rel="canonical" href="{{ canonical }}">
     {# breadcrumbs: the one rich result type a card page honestly claims.
        google reads it and prints the snippet's url line as a trail,
        "Delvefall > card name". the last crumb is this page, so it names

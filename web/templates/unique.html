@@ -175,6 +175,9 @@ function showAt(i) {
                 cardBox.innerHTML = "";
                 statusEl.textContent = "That card left the database since you saw it. " + trail;
             }
+        })
+        .catch(function() {
+            statusEl.textContent = "Couldn't fetch that card, check your connection. " + trail;
         });
 }
 
@@ -265,6 +268,13 @@ function dealOne() {
                 updateArrows();
                 statusEl.textContent = "No cards you haven't seen fit this search. Lower the bar, loosen the filters, or start over to make the " + seen.length + " cards you've been dealt eligible again.";
             }
+        })
+        .catch(function() {
+            //a failed deal shouldn't jam the dealer: dealing would stay
+            //true and every later click would bounce off it
+            dealing = false;
+            againBtn.textContent = dealLabel();
+            statusEl.textContent = "The deal didn't reach the server, try again.";
         });
 }
 

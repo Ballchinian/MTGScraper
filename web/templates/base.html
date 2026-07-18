@@ -7,6 +7,17 @@
         {# the search-engine snippet. pages override the block with their own
            sentence, search.html says which card its results are about #}
         <meta name="description" content="{% block metadesc %}Delvefall finds every Magic: The Gathering card that does the same thing as the card you search, even when the wording is completely different.{% endblock %}">
+        {# the unfurl card a pasted link grows in discord and friends. every
+           page gets the logo and its own title and sentence, search.html
+           overrides the block with the card's art and name #}
+        {% block og %}
+        <meta property="og:site_name" content="Delvefall">
+        <meta property="og:type" content="website">
+        <meta property="og:title" content="{{ self.title() }}">
+        <meta property="og:description" content="{{ self.metadesc() }}">
+        <meta property="og:image" content="{{ request.url_root.rstrip('/') ~ static_url('DelvefallLogo.png') }}">
+        <meta name="twitter:card" content="summary">
+        {% endblock %}
         {# search console proof of ownership, one tag per verified property (delvefall.com) #}
         <meta name="google-site-verification" content="oWhTi5fndKHhGtea_eqlff2CttnTOc6FSFMMsxTmYV8">
         {# every meaningful page is mostly card pictures from this one host,
