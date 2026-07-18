@@ -985,6 +985,29 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
     return results, has_more, weak_count
 
 
+#the pool of much-played cards the home page scatters as ghost chips when
+#the visitor has no search history yet. lands sit out (searching one is a
+#dull first impression), one query an hour, and a database hiccup just
+#means an empty pool, the landing page never 500s over garnish
+_seed_cache = {"at": 0.0, "names": []}
+
+
+def chip_seeds():
+    if time.time() - _seed_cache["at"] > 3600:
+        try:
+            with pool.connection() as conn:
+                rows = conn.execute("""
+                    SELECT name FROM cards
+                    WHERE edhrec_rank IS NOT NULL AND type_line NOT LIKE '%%Land%%'
+                    ORDER BY edhrec_rank LIMIT 40
+                """).fetchall()
+            _seed_cache["names"] = [r["name"] for r in rows]
+        except Exception:
+            pass
+        _seed_cache["at"] = time.time()
+    return _seed_cache["names"]
+
+
 @app.route("/")
 def home():
     #the landing page. search moved to /search when this page arrived, but
@@ -992,7 +1015,7 @@ def home():
     #gets forwarded there with its whole query string intact
     if request.args.get("q"):
         return redirect("/search?" + request.query_string.decode(), code=301)
-    return render_template("home.html")
+    return render_template("home.html", seeds=chip_seeds())
 
 
 @app.route("/search")

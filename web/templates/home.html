@@ -43,8 +43,9 @@
 
 {% block content %}
     <div class="home-hero">
-        {# the recent searches get scattered around this layer by the script
-           below, floating gently like the card fan on scryfall's front page #}
+        {# recent searches, padded out with much-played cards, get scattered
+           around this layer by the script below, floating gently like the
+           card fan on scryfall's front page #}
         <div id="recent-floats"></div>
 
         {# the logo is the biggest paint on this page, it shouldn't wait its turn #}
@@ -71,15 +72,24 @@
 {% block scripts %}
 <script>
 /*
-    the recent searches resting around the edges of the screen. the /search
-    page drops every card you look at into localStorage, and this places the
-    last few as clickable ghosts. the slots hug the viewport's corners and
-    sides, none of them anywhere near the search bar in the middle
+    the cards resting around the edges of the screen. the /search page drops
+    every card you look at into localStorage, and this places the last few
+    as clickable ghosts. slots real history hasn't claimed get much-played
+    cards from the server instead, so a first visit isn't an empty room.
+    the slots hug the viewport's corners and sides, none of them anywhere
+    near the search bar in the middle
 */
 var recent = [];
 try {
     recent = JSON.parse(localStorage.getItem("recent_searches") || "[]");
 } catch (e) {}
+
+//shuffled so every visit scatters a different handful
+var seeds = {{ seeds | tojson }}.filter(function(n) { return recent.indexOf(n) == -1; });
+for (var i = seeds.length - 1; i > 0; i--) {
+    var j = Math.floor(Math.random() * (i + 1));
+    var t = seeds[i]; seeds[i] = seeds[j]; seeds[j] = t;
+}
 
 var slots = [
     {top: "12%", left: "6%"},
@@ -93,12 +103,17 @@ var slots = [
 ];
 
 var layer = document.getElementById("recent-floats");
-recent.slice(0, slots.length).forEach(function(name, i) {
+var shown = recent.slice(0, slots.length);
+var fromHistory = shown.length;
+while (shown.length < slots.length && seeds.length) {
+    shown.push(seeds.pop());
+}
+shown.forEach(function(name, i) {
     var a = document.createElement("a");
     a.className = "float-chip";
     a.textContent = name;
     a.href = "/search?q=" + encodeURIComponent(name);
-    a.title = "search " + name + " again";
+    a.title = i < fromHistory ? "search " + name + " again" : "try " + name;
     var slot = slots[i];
     a.style.top = slot.top;
     if (slot.left) { a.style.left = slot.left; }
