@@ -75,15 +75,14 @@
                     {% endif %}
                 </p>
                 {# the concepts side's half of the picker: the community tags
-                   this card was given. picking a line sets aside the ones that
-                   line isn't about, which is the whole reason a line selection
-                   now moves the concepts side too. only rendered past slider
-                   detent 0, where the concept axis actually counts.
-                   that setting-aside is behind LINE_TAGS (see app.py) until the
-                   attribution clears its bar, so line_tags_on is what decides
-                   whether the hint offers it. the aside and kept chip states
-                   cannot occur with it off, which is why their branches need
-                   no guard of their own #}
+                   this card was given, with picking a line narrowing them to
+                   that one ability. the WHOLE block is behind LINE_TAGS (see
+                   app.py) until the attribution earns its place, so the route
+                   hands back no chips at all and everything below falls away
+                   with them, hint included. rendered past slider detent 0 only,
+                   where the concept axis actually counts. the slider itself is
+                   NOT gated: the concepts side still scores off the whole
+                   card's tags, you just cannot hand-tune which ones #}
                 {% if tag_chips %}
                 <div class="tag-picker">
                     {% for chip in tag_chips %}

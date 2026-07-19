@@ -1249,7 +1249,7 @@ def search():
     #so at detent 0 (pure rules text) they stay off the page rather than
     #sitting there as a control that changes nothing
     with pool.connection() as conn:
-        chips = anchor_chips(conn, card["oracle_id"], dropped, picked, forced) if blend > 0 else []
+        chips = anchor_chips(conn, card["oracle_id"], dropped, picked, forced) if blend > 0 and LINE_TAGS else []
 
     results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, min_pct, sort,
                                                  blend=BLEND_WEIGHTS[blend], currency=filters["cur"],
