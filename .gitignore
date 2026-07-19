@@ -12,6 +12,10 @@ __pycache__/
 #local database connection string, never commit this
 .env
 
+#the roadmap is private: it carries the strategy, what the competition can
+#and cant do, and what not to build. it stays on disk and out of the repo
+TODO.md
+
 #in case a virtualenv ever lives in here
 venv/
 .venv/
