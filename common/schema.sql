@@ -127,9 +127,12 @@ CREATE INDEX IF NOT EXISTS lines_oracle_id ON lines (oracle_id);
 --uniqueness is unaffected, recompute_uniqueness does its math in numpy
 CREATE INDEX IF NOT EXISTS lines_embedding_hnsw ON lines USING hnsw (embedding vector_cosine_ops) WITH (m = 32, ef_construction = 200) WHERE (NOT whole);
 
---how many cards share each exact line of text, for the idf weighting
---("Flying" is on thousands of cards so it barely counts, a wordy triggered
---ability is nearly unique so it counts full strength)
+--how many cards share each line, for the idf weighting ("Flying" is on
+--thousands of cards so it barely counts, a wordy triggered ability is nearly
+--unique so it counts full strength). keyed by exact text because that is what
+--the search joins on, but COUNTED per shape: update.py collapses each run of
+--mana symbols to a placeholder first, so "Overload {4}{R}" and "Overload
+--{2}{R}" share a bucket instead of each looking unique at full weight
 CREATE TABLE IF NOT EXISTS line_stats (
     line_text text PRIMARY KEY,
     count     int NOT NULL

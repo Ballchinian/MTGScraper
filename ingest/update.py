@@ -491,10 +491,27 @@ def main():
 
     if work or stale:
         #recount how common every line is. its one group by over ~61k rows,
-        #way easier than trying to patch the counts incrementally
+        #way easier than trying to patch the counts incrementally.
+        #
+        #counted per SHAPE, not per exact text: a run of mana symbols collapses
+        #to one placeholder first, so "Overload {4}{R}" and "Overload {2}{R}"
+        #share a bucket. counting exact text let any keyword with a varying cost
+        #dodge the idf weighting, fragmenting into one and two card texts that
+        #each drew the full 1.0 weight a unique ability gets (overload: 27
+        #card-lines, 22 texts, biggest on 2), which is how Vandalblast matched
+        #Dynacharge at 99% on the keyword alone. still KEYED by exact text,
+        #which is what the search joins on. no braces, no change: Flying = 2517
         print("recounting how common every line is...")
         conn.execute("TRUNCATE line_stats")
-        conn.execute("INSERT INTO line_stats SELECT line_text, count(*) FROM lines WHERE NOT whole GROUP BY line_text")
+        conn.execute(r"""
+            INSERT INTO line_stats
+            SELECT line_text, sum(n) OVER (PARTITION BY shape)
+            FROM (
+                SELECT line_text, count(*) AS n,
+                       regexp_replace(line_text, '(\{[^}]*\})+', '{C}', 'g') AS shape
+                FROM lines WHERE NOT whole GROUP BY line_text
+            ) t
+        """)
 
     #remember which bulk file this was so tomorrow's run can skip it, and
     #which model made the vectors so the next swap rebuilds automatically
