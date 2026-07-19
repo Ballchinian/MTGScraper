@@ -23,10 +23,7 @@
 #every embedding it reads is already in the database.
 
 import os
-import re
 import sys
-import math
-import collections
 
 import numpy as np
 import psycopg
@@ -51,18 +48,6 @@ FLOOR = 1.5
 #off every line rather than parked on the least-bad one
 NOISE = 1.15
 
-#how much the second, completely different signal counts for. tagger writes a
-#plain english description of most tags ("At the end of turn, if a condition
-#isn't met, a consequence is given" for catch-22) and the lines are plain
-#english too, so word overlap between the two is evidence the neighbourhood
-#vote knows nothing about. the two fail in different places, which is the
-#whole point: the vote is strong on tags with many examples and blind on
-#abstract ones, the words are strong on tags whose description names what the
-#line does and blind on jargon like cantrip. measured on the hand-labelled
-#cards, 0.5 took precision from 78% to 90% at the same recall. above ~1.0 the
-#words start outvoting the corpus and precision falls again
-LEX_WEIGHT = 0.5
-
 #once a tag's best line is known, any other line within this fraction of that
 #best also gets it. modal cards are why: each mode line lifts "modal" hard,
 #and crediting only the single strongest would make picking any other mode
@@ -75,58 +60,6 @@ LEX_WEIGHT = 0.5
 #0.6 gives 93% / 76%. that is ONE card, so re-measure on a second labelled
 #card before trusting the third digit
 RATIO = 0.6
-
-
-def _words(text):
-    #crude but deterministic: lowercase, letters only, drop the very short
-    #ones, and chop the common suffixes so "creatures"/"creature" and
-    #"gains"/"gain" line up. a real stemmer would be better and would also be
-    #a new dependency for a signal this small
-    out = []
-    for w in re.findall(r"[a-z]+", (text or "").lower()):
-        if len(w) < 3:
-            continue
-        for suffix in ("ing", "es", "ed", "s"):
-            if len(w) > 4 and w.endswith(suffix):
-                w = w[:-len(suffix)]
-                break
-        out.append(w)
-    return out
-
-
-def build_lexical(conn):
-    #word idf over the line corpus, so "creature" and "target" count for
-    #almost nothing and "planeswalker" or "haste" carry the match. returns a
-    #scorer for one line against one tag
-    lines_seen = 0
-    doc_freq = collections.Counter()
-    for (text,) in conn.execute("SELECT line_text FROM lines WHERE NOT whole"):
-        lines_seen += 1
-        for w in set(_words(text)):
-            doc_freq[w] += 1
-    idf = {w: math.log(lines_seen / (1 + n)) for w, n in doc_freq.items()}
-    unseen = math.log(max(lines_seen, 2))
-
-    #a tag's text is its own slug plus whatever description tagger wrote.
-    #only ~42% of tags have a description, so this signal is silent for the
-    #rest and the neighbourhood vote carries them alone
-    tag_words = {}
-    for tag, description in conn.execute("SELECT tag, description FROM tags"):
-        tag_words[tag] = set(_words(tag.replace("-", " ")) + _words(description))
-
-    def score(line_text, tag):
-        wanted = tag_words.get(tag)
-        if not wanted:
-            return 0.0
-        shared = wanted & set(_words(line_text))
-        if not shared:
-            return 0.0
-        #divided by the tag's own weight so a wordy description cannot
-        #outscore a terse one just by having more chances to match
-        total = sum(idf.get(w, unseen) for w in wanted)
-        return sum(idf.get(w, unseen) for w in shared) / math.sqrt(total + 1)
-
-    return score
 
 
 def main():
@@ -167,13 +100,10 @@ def main():
     print("reading line embeddings...")
     ids = []
     owners = []
-    line_text = []
     vecs = []
-    for lid, oid, text, vec in conn.execute(
-            "SELECT id, oracle_id, line_text, embedding FROM lines WHERE NOT whole ORDER BY id"):
+    for lid, oid, vec in conn.execute("SELECT id, oracle_id, embedding FROM lines WHERE NOT whole ORDER BY id"):
         ids.append(lid)
         owners.append(str(oid))
-        line_text.append(text)
         vecs.append(vec.to_numpy())  #pgvector hands back its own Vector class
     if not ids:
         print("no lines yet, nothing to attribute")
@@ -207,7 +137,7 @@ def main():
     #how many lines each card has, for the first pass's damping below
     lines_on_card = {oid: len(idxs) for oid, idxs in rows_of_card.items()}
 
-    def assign(lift_of, lexical=None):
+    def assign(lift_of):
         #per card and per tag, which of its lines earned it. the best line
         #sets the bar and everything within RATIO of it shares the credit.
         #
@@ -219,34 +149,12 @@ def main():
         #searches never read this table, so nothing is lost there, and Omnath's
         #unique-mana-cost stops turning up under "when this card enters, draw a
         #card". attaching them everywhere was the single largest source of
-        #false positives on the hand-labelled cards.
-        #
-        #when a lexical scorer is supplied the two signals are each normalized
-        #against their own best line before being added, because a lift ratio
-        #and a word-overlap score share no scale. normalizing per tag also
-        #means only the SHAPE across this card's lines matters, which is the
-        #only question being asked
+        #false positives on the hand-labelled cards
         out = {}
         for oid, line_idxs in rows_of_card.items():
             for tag in typed_tags.get(oid, ()):
                 lifts = [(i, lift_of.get((i, tag), 0.0)) for i in line_idxs]
                 best = max(l for _, l in lifts)
-                if lexical is not None:
-                    lex = [lexical(line_text[i], tag) for i in line_idxs]
-                    best_lex = max(lex)
-                    if best < NOISE and best_lex <= 0:
-                        continue  #neither signal has anything to say
-                    if best_lex > 0:
-                        #blend, then re-express on the lift scale so the bar
-                        #and floor logic below reads the same as it always did
-                        scale = best if best > 0 else 1.0
-                        blended = [((l / scale) if best > 0 else 0.0)
-                                   + LEX_WEIGHT * (x / best_lex)
-                                   for (_, l), x in zip(lifts, lex)]
-                        top = max(blended)
-                        lifts = [(i, (b / top) * max(best, NOISE))
-                                 for (i, _), b in zip(lifts, blended)]
-                        best = max(l for _, l in lifts)
                 #a lift of 1.0 means the neighbourhood carries the tag at
                 #exactly the rate the whole game does, which is no evidence
                 #whatsoever. Omnath's unique-mana-cost sat at 1.0x on "when
@@ -319,18 +227,11 @@ def main():
     #reads zero for that - Omnath's sweeper-one-sided is the case that caught
     #it. so pass two's answer wins wherever it found anything at all for a
     #tag, and pass one's stands where it found nothing
-    #the word signal only joins at the end. it is an independent opinion about
-    #which line a tag belongs to, not something the corpus votes should be
-    #bootstrapped from - folding it into pass one would let it contaminate the
-    #neighbourhood evidence that pass two then reads back
-    print("reading tag descriptions...")
-    lexical = build_lexical(conn)
-
     print("assigning...")
-    second = assign(lift2, lexical)
+    second = assign(lift2)
     seen_in_second = {(owners[i], tag) for i, tag in second}
     final = dict(second)
-    for (i, tag), l in assign(lift_of, lexical).items():
+    for (i, tag), l in first.items():
         if (owners[i], tag) not in seen_in_second:
             final[(i, tag)] = l
 
