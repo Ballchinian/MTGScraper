@@ -42,6 +42,12 @@ NEIGHBOURS = 200
 #lifts evasion 2.4x, which is weak but still the right line for it)
 FLOOR = 1.5
 
+#below this a line has no claim on a tag at all. 1.0 is the neutral point of
+#a lift ratio (the neighbourhood carries the tag exactly as often as the game
+#does), so anything at or under it is evidence of nothing and the tag is left
+#off every line rather than parked on the least-bad one
+NOISE = 1.15
+
 #once a tag's best line is known, any other line within this fraction of that
 #best also gets it. modal cards are why: each mode line lifts "modal" hard,
 #and crediting only the single strongest would make picking any other mode
@@ -135,30 +141,33 @@ def main():
         #per card and per tag, which of its lines earned it. the best line
         #sets the bar and everything within RATIO of it shares the credit.
         #
-        #the sub-FLOOR case is the subtle one. a tag can miss the floor for
-        #two opposite reasons: nothing in the game connects it to any of these
-        #lines (invitational-card, which really is about the card), or it is
-        #so common that no line can stand out on it (triggered-ability sits
-        #near 1.0x everywhere by definition). only the first is card-level.
-        #treating both that way sprayed the broad tags onto every line and
-        #cost more precision than the card-level idea ever bought, so a tag
-        #with a real best line goes there even when the lift is unimpressive,
-        #and only a tag no neighbourhood mentions at all rides every line
+        #a tag no line shows any evidence for is attributed to NOTHING, and
+        #that is deliberate. it used to ride every line instead, on the theory
+        #that tags like invitational-card describe the card rather than an
+        #ability - but that is exactly why they should be absent: they are not
+        #about any ability, so picking an ability should drop them. whole-card
+        #searches never read this table, so nothing is lost there, and Omnath's
+        #unique-mana-cost stops turning up under "when this card enters, draw a
+        #card". attaching them everywhere was the single largest source of
+        #false positives on the hand-labelled cards
         out = {}
         for oid, line_idxs in rows_of_card.items():
             for tag in typed_tags.get(oid, ()):
                 lifts = [(i, lift_of.get((i, tag), 0.0)) for i in line_idxs]
                 best = max(l for _, l in lifts)
-                if best <= 0:
-                    for i, l in lifts:
-                        out[(i, tag)] = (l, True)
+                #a lift of 1.0 means the neighbourhood carries the tag at
+                #exactly the rate the whole game does, which is no evidence
+                #whatsoever. Omnath's unique-mana-cost sat at 1.0x on "when
+                #this card enters, draw a card" and got attributed anyway,
+                #because the only bar was "above zero"
+                if best < NOISE:
                     continue
                 #near-best only when the signal is weak, since RATIO of a
                 #small number would wave nearly every line through
                 bar = max(best * RATIO, FLOOR) if best >= FLOOR else best * 0.9
                 for i, l in lifts:
                     if l >= bar:
-                        out[(i, tag)] = (l, False)
+                        out[(i, tag)] = l
         return out
 
     #pass one: neighbours vote with their whole CARD's tags, because
@@ -196,9 +205,8 @@ def main():
     #merely sits on a card with an unrelated ability stops donating it
     print("scoring, pass two (lines vote)...")
     line_tags_now = {}
-    for (i, tag), (_, card_level) in first.items():
-        if not card_level:
-            line_tags_now.setdefault(i, set()).add(tag)
+    for (i, tag) in first:
+        line_tags_now.setdefault(i, set()).add(tag)
     lift2 = {}
     for i in range(len(ids)):
         mine = typed_tags.get(owners[i])
@@ -214,10 +222,20 @@ def main():
                     hits += 1
             lift2[(i, tag)] = (hits / len(nb)) / base_rate.get(tag, 1.0)
 
+    #pass two sharpens, it does not get to erase. a rare tag can be real on
+    #one line and still have no neighbour line carrying it yet, and pass two
+    #reads zero for that - Omnath's sweeper-one-sided is the case that caught
+    #it. so pass two's answer wins wherever it found anything at all for a
+    #tag, and pass one's stands where it found nothing
     print("assigning...")
-    rows = []
-    for (i, tag), (l, card_level) in assign(lift2).items():
-        rows.append((ids[i], tag, l, card_level))
+    second = assign(lift2)
+    seen_in_second = {(owners[i], tag) for i, tag in second}
+    final = dict(second)
+    for (i, tag), l in first.items():
+        if (owners[i], tag) not in seen_in_second:
+            final[(i, tag)] = l
+
+    rows = [(ids[i], tag, l, False) for (i, tag), l in final.items()]
 
     print("writing " + str(len(rows)) + " line-tag rows...")
     with conn.cursor() as cur:
