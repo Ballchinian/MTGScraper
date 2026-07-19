@@ -226,7 +226,7 @@ def line_weight(count):
 #(further down, once both are defined) makes the database's word win. these
 #only hold until the first ingest run against a database, and a model swap
 #carries its new map along with its new vectors automatically
-CALIBRATION = [(0.0, 0), (0.10, 35), (0.22, 55), (0.35, 70), (0.55, 82), (0.68, 90), (1.0, 100)]
+CALIBRATION = [(0.0, 0), (0.13, 35), (0.26, 55), (0.45, 70), (0.59, 82), (0.68, 90), (1.0, 100)]
 MIN_CONCEPT = 80
 
 
