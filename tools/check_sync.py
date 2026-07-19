@@ -45,8 +45,14 @@ def same(what, a, b, where="between web/ and its source of truth"):
 
 
 #the line cleaner: it must clean exactly like the ingest did, or the line
-#picker can't find the lines shown on the page in the lines table
+#picker can't find the lines shown on the page in the lines table. the helper
+#and the keyword list it leans on are checked too - clean_line's own ast would
+#look identical while either of those quietly said something different
 same("clean_line", func_dump("web/app.py", "clean_line"), func_dump("common/cards.py", "clean_line"))
+same("reminder_is_the_rule", func_dump("web/app.py", "reminder_is_the_rule"),
+     func_dump("common/cards.py", "reminder_is_the_rule"))
+same("REMINDER_KEYWORDS", assign_value("web/app.py", "REMINDER_KEYWORDS"),
+     assign_value("common/cards.py", "REMINDER_KEYWORDS"))
 
 #the generated scryfall word catalogs the cleaner leans on
 if read("web/prefix_words.py") != read("common/prefix_words.py"):

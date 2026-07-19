@@ -44,9 +44,55 @@ def get_back_image(card):
     return ""
 
 
+#mechanics whose reminder text IS the rule. "Overload {6}{U}" says nothing on
+#its own, so stripping the parens stored Cyclonic Rift as a plain one-target
+#bounce spell and it matched Perilous Voyage at 91%, missing the one-sided
+#board wipe that makes the card worth $30.
+#
+#evergreen abilities are deliberately absent. 2442 cards print a bare "Flying"
+#against 75 that spell the reminder out, so keeping those 75 would orphan them
+#from the other 2442 - the exact opposite of the fix. every keyword here was
+#measured to be printed WITH its reminder at least ~88% of the time, so the
+#whole population moves together instead of splitting in half. equip (242 with
+#against 332 without) and menace and trample fail that test and stay stripped.
+#check the ratio before adding to this list
+REMINDER_KEYWORDS = {
+    "overload", "cascade", "storm", "cycling", "flashback", "morph", "disguise",
+    "madness", "convoke", "delve", "buyback", "entwine", "replicate", "embalm",
+    "eternalize", "unearth", "disturb", "blitz", "bargain", "craft", "mutate",
+    "foretell", "bestow", "improvise", "emerge", "evoke", "dash", "spectacle",
+    "surge", "escalate", "splice", "rebound", "conspire", "retrace", "miracle",
+    "ninjutsu", "prowl", "transmute", "scavenge", "encore", "outlast",
+}
+
+#one keyword name plus any mana symbols, eg "Cycling {2}" or "Flying"
+_BARE_KEYWORD = re.compile(r"[A-Za-z][A-Za-z'’ -]*(?:\s*\{[^}]*\})*")
+
+
+def reminder_is_the_rule(stripped):
+    #true when removing the parens left nothing but keyword names and mana
+    #symbols ("Cycling {2}", "Flying, double strike") AND the leading keyword
+    #is one whose reminder text carries the actual rule. anything with a real
+    #sentence in it kept its meaning and doesnt need the reminder back
+    text = stripped.strip().rstrip(".")
+    if not text:
+        return False
+    for part in text.split(","):
+        part = part.strip()
+        if part and not _BARE_KEYWORD.fullmatch(part):
+            return False
+    first = re.split(r"[^A-Za-z'’-]", text, maxsplit=1)[0].lower()
+    return first in REMINDER_KEYWORDS
+
+
 def clean_line(line, card_name):
-    #reminder text (the stuff in parens) is just for humans, the model doesnt need it
-    line = re.sub(r"\(.*?\)", "", line)
+    #reminder text (the stuff in parens) is just for humans, the model doesnt
+    #need it - except where the parens hold the whole rule, see above
+    stripped = re.sub(r"\(.*?\)", "", line)
+    if reminder_is_the_rule(stripped):
+        line = line.replace("(", "").replace(")", "")
+    else:
+        line = stripped
     #flavour prefixes must not beat meaning (testing_list CA): die-roll table
     #rows ("1—9 |"), saga chapter markers ("I, II —") and ability/flavor
     #words ("Landfall —", "Siege Monster —") say when or in what style, not

@@ -155,10 +155,39 @@ CARD_TYPES = ["Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Plan
 UNIQUE_PAGE = 1
 
 #copied from common/cards.py because railway only deploys the web folder.
-#it has to stay identical to what the ingest used, otherwise the line picker
-#cant match the lines shown on the page back to their rows in the database
+#these three have to stay identical to what the ingest used, otherwise the
+#line picker cant match the lines shown on the page back to their rows in the
+#database. see common/cards.py for why the keyword list looks like this
+REMINDER_KEYWORDS = {
+    "overload", "cascade", "storm", "cycling", "flashback", "morph", "disguise",
+    "madness", "convoke", "delve", "buyback", "entwine", "replicate", "embalm",
+    "eternalize", "unearth", "disturb", "blitz", "bargain", "craft", "mutate",
+    "foretell", "bestow", "improvise", "emerge", "evoke", "dash", "spectacle",
+    "surge", "escalate", "splice", "rebound", "conspire", "retrace", "miracle",
+    "ninjutsu", "prowl", "transmute", "scavenge", "encore", "outlast",
+}
+
+_BARE_KEYWORD = re.compile(r"[A-Za-z][A-Za-z'’ -]*(?:\s*\{[^}]*\})*")
+
+
+def reminder_is_the_rule(stripped):
+    text = stripped.strip().rstrip(".")
+    if not text:
+        return False
+    for part in text.split(","):
+        part = part.strip()
+        if part and not _BARE_KEYWORD.fullmatch(part):
+            return False
+    first = re.split(r"[^A-Za-z'’-]", text, maxsplit=1)[0].lower()
+    return first in REMINDER_KEYWORDS
+
+
 def clean_line(line, card_name):
-    line = re.sub(r"\(.*?\)", "", line)
+    stripped = re.sub(r"\(.*?\)", "", line)
+    if reminder_is_the_rule(stripped):
+        line = line.replace("(", "").replace(")", "")
+    else:
+        line = stripped
     #flavour prefixes go, exactly like the ingest side: die-roll rows, saga
     #chapters, and scryfall's catalog of ability/flavor words before a dash
     line = re.sub(r"^\d+(?:—\d+)?\s*\|\s*", "", line)
