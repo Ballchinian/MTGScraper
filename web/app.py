@@ -993,7 +993,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         #one query per line on purpose. the obvious "one big query" (the
         #anchor's lines CROSS JOIN LATERAL the scan) was built and measured
         #at 2.3x SLOWER: with the anchor embedding as a lateral outer column
-        #postgres re-detoasts the ~3kb vector for every one of the 61k
+        #postgres detoasts the ~3kb vector again for every one of the 61k
         #distance evaluations, while a bound parameter gets detoasted once.
         #
         #no l.id tiebreak on the ORDER BY: a second sort key pushes the

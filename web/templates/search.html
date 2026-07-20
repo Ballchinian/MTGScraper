@@ -256,10 +256,12 @@
                 this.form.requestSubmit();
             };
         });
-        //the fold's open state survives the reload those widgets cause: adv
-        //rides the url while the fold is open, and the server reopens it.
-        //without this, flipping the currency closed the panel and lost your
-        //place mid-filter
+        /*
+            the fold's open state survives the reload those widgets cause:
+            adv rides the url while the fold is open, and the server reopens
+            it. without this, flipping the currency closed the panel and lost
+            your place mid-filter
+        */
         document.querySelector(".filter-bar").addEventListener("submit", function() {
             this.elements.adv.disabled = !this.querySelector(".adv-filters").open;
         });
