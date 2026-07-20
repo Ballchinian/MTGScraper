@@ -514,32 +514,59 @@ h2 {
     margin-top: 6px;
 }
 
-/* the arrow next to the price: which side of the searched card's price this
-   one falls, and how far. the direction is always there; colour only arrives
-   for a move worth reacting to (a doubling or a halving, and at least a
-   pound or dollar of it), so green and red mean "this is a real difference"
-   rather than decorating every row. a small move stays plain ink.
+/* the price and its arrow, coloured together. colour on the arrow alone was
+   too small to see at this size, so the whole figure carries it: the number
+   is the thing you are reading anyway, and it is now the thing that tells
+   you which way it moved.
+   colour only arrives for a move worth reacting to (a doubling or a halving,
+   and at least a pound or dollar of it), so green and red mean "this is a
+   real difference" rather than decorating every row. a small move keeps the
+   arrow and stays plain ink.
    this is the one place colour is spent on a price, and it is spent on a
-   COMPARISON, not on the number itself: green here means cheaper than what
-   you searched, which is a fact, where a green price meant "good value",
-   which was an opinion the number could not support */
+   COMPARISON, not on the number itself: green here means cheaper than the
+   card you searched, which is a fact, where a green price meant "good
+   value", which was an opinion the number could not support */
+.price-figure { cursor: help; }
+
+.price-figure.much-cheaper { color: #1f6b41; }
+
+.price-figure.much-pricier { color: #b3352a; }
+
+/* the arrow rides the figure's colour, and carries its own weight so the
+   direction is legible at 13px whether or not the colour applies */
 .price-vs {
-    color: var(--text);
-    font-weight: normal;
     margin-left: 3px;
-    cursor: help;
+    font-weight: 700;
+    font-size: 14px;
 }
-
-.price-vs.much-cheaper { color: #1f6b41; }
-
-.price-vs.much-pricier { color: #b3352a; }
 
 /* the same idea on the play-rate side, deliberately without colour: the
    edhrec rank is a popularity fact and colouring it would imply popular is
-   better, which is exactly the claim the price colour used to make */
+   better, which is exactly the claim the price colour used to make. it gets
+   the same weight as the price arrow so both are readable, just no hue */
 .rank-vs {
     margin-left: 2px;
+    font-weight: 700;
     cursor: help;
+}
+
+/* the searched card's own price and rank, under its type line. the same
+   sizes as a result's so the numbers being compared read as the same kind
+   of thing */
+.anchor-figures {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+    margin: 0 0 12px;
+    font-size: 13px;
+}
+
+.anchor-price { font-weight: 600; }
+
+.anchor-note {
+    color: var(--muted);
+    font-size: 12.5px;
 }
 
 /* edhrec popularity, riding along the price row. muted grey so the price
@@ -815,15 +842,19 @@ h2 {
     min-width: 76px;
 }
 
+/* the remove button leads the row rather than trailing it: at the right hand
+   end it sat a variable distance away depending on how wide the widget was,
+   so the four of them never lined up and none of them read as belonging to
+   the filter it removed */
 .slot-off {
-    margin-left: auto;
     background: none;
     border: 0;
     color: var(--muted);
     font-size: 17px;
     line-height: 1;
-    padding: 0 4px;
+    padding: 0 2px;
     cursor: pointer;
+    flex-shrink: 0;
 }
 
 .slot-off:hover { color: #c23c2e; }
@@ -861,34 +892,70 @@ h2 {
 
 .adv-none { font-style: italic; }
 
-/* the card type chips. pills that toggle like the color symbols do, and
-   any picked one matches, so Artifact plus Creature is finally askable */
-.type-chip {
+/* the card type control: one button that names its own state, with the
+   checkboxes behind it. eight chips sitting there unticked said nothing
+   about what the filter was doing, and "nothing ticked" was indistinguishable
+   from "filter not working". this button always reads either "Any type" or
+   the types it is keeping */
+.type-menu {
     position: relative;
-    font-size: 12.5px;
+    display: inline-block;
+}
+
+.type-summary {
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: #fffef9;
     border: 1px solid var(--line-strong);
     border-radius: 2px;
-    padding: 3px 10px;
-    background: #fffef9;
+    padding: 4px 24px 4px 10px;
+    cursor: pointer;
+    /* the same drawn chevron the selects wear, so it reads as the same kind
+       of control even though it opens checkboxes rather than options */
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='10'%20height='6'%3E%3Cpath%20d='M1%201l4%204%204-4'%20fill='none'%20stroke='%2324333f'%20stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
 }
 
-.type-chip:hover { border-color: var(--teal); }
+.type-summary:hover { border-color: var(--teal); }
 
-.type-chip:has(input:checked) {
-    background: var(--teal);
-    border-color: var(--teal);
-    color: white;
-}
-
-.type-chip:has(input:focus-visible) {
+.type-summary:focus-visible {
     outline: 2px solid var(--teal);
-    outline-offset: 2px;
+    outline-offset: 1px;
 }
 
-.type-chip input {
+/* once it is actually narrowing, it stops looking like a resting control */
+.type-menu.picked .type-summary {
+    border-color: var(--teal);
+    color: var(--teal);
+    font-weight: 600;
+}
+
+.type-options {
     position: absolute;
-    opacity: 0;
-    pointer-events: none;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 10px;
+    background: var(--panel);
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    box-shadow: 0 4px 12px rgba(33, 31, 26, 0.16);
+    white-space: nowrap;
+}
+
+.type-options[hidden] { display: none; }
+
+.type-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
 }
 
 /* the pointer to the guide at the bottom of the panel, where the deleted

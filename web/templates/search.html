@@ -60,6 +60,17 @@
             <div class="searched-info">
                 <h1>{{ card.name }} <span class="mana">{{ card.mana_cost | mana }}</span></h1>
                 <p class="type-line">{{ card.type_line }}</p>
+                {# the searched card's own price and rank. every result carries
+                   an arrow measured against these two numbers, and until now
+                   the thing being compared to was the one thing not on the
+                   page #}
+                {% if card.price or card.rank %}
+                <p class="anchor-figures">
+                    {% if card.price %}<span class="anchor-price">{{ card.price }}</span>{% endif %}
+                    {% if card.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">{{ card.rank }}</span>{% endif %}
+                    <span class="anchor-note">what the arrows below compare against</span>
+                </p>
+                {% endif %}
                 <div class="oracle">
                     {% for line in card_lines %}
                     {% if line.searchable %}
@@ -112,12 +123,6 @@
 
         <form class="filter-bar" action="/search" method="get">
             <input type="hidden" name="q" value="{{ query }}">
-            {# rides the url whenever the fold is open at submit time, so a
-               widget applying itself (currency, sort) can't slam the fold
-               shut on reload and lose the user's place. the submit handler
-               below disables it when the fold is closed, and disabled
-               inputs stay out of the query string #}
-            <input type="hidden" name="adv" value="1">
             {% if request.args.get('lines') %}
             <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
             {% endif %}
@@ -199,7 +204,7 @@
                     <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="shouldn't be here? report this as a bad match">?</button>
                 </div>
                 <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="rules text {{ r.mech_pct }}% and concept {{ r.concept_pct }}%, blended for your slider position"{% endif %}>{{ r.percent }}%</span></div>
-                {% if r.price or r.rank %}<div class="result-price">{{ r.price }}{% if r.price_vs %}<span class="price-vs {{ r.price_vs }}" title="{{ r.price_vs.replace('-', ' ') }} than {{ card.name }}">{{ '↓' if 'cheaper' in r.price_vs else '↑' }}</span>{% endif %}{% if r.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">{{ r.rank }}{% if r.rank_vs %}<span class="rank-vs" title="{{ 'more' if r.rank_vs == 'more-played' else 'less' }} played than {{ card.name }}">{{ '↑' if r.rank_vs == 'more-played' else '↓' }}</span>{% endif %}</span>{% endif %}</div>{% endif %}
+                {% if r.price or r.rank %}<div class="result-price"><span class="price-figure {{ r.price_vs }}"{% if r.price_vs %} title="{{ r.price_vs.replace('-', ' ') }} than {{ card.name }} at {{ card.price }}"{% endif %}>{{ r.price }}{% if r.price_vs %}<span class="price-vs">{{ '↓' if 'cheaper' in r.price_vs else '↑' }}</span>{% endif %}</span>{% if r.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">{{ r.rank }}{% if r.rank_vs %}<span class="rank-vs" title="{{ 'more' if r.rank_vs == 'more-played' else 'less' }} played than {{ card.name }} at {{ card.rank }}">{{ '↑' if r.rank_vs == 'more-played' else '↓' }}</span>{% endif %}</span>{% endif %}</div>{% endif %}
                 {% if r.their_line %}
                 <div class="match-line" title="matches your card's line: {{ r.our_line }}{% if r.matched_back %} (printed on the back face, shown here){% endif %}">"{{ r.their_line | mana }}"</div>
                 {% endif %}
@@ -213,10 +218,13 @@
             {% endfor %}
         </div>
 
-        {% if has_more or weak_count %}
+        {# the button either pages the tier it is in or steps down to the next
+           band of weaker matches, naming the range it is about to show so
+           nobody opens a pile of 0% cards by accident #}
+        {% if has_more or next_band %}
         <div class="load-more-wrap">
-            <button id="load-more" data-min="{{ min_pct }}" {% if not has_more %}data-tier="weak"{% endif %}>
-                {%- if has_more %}Load 20 more{% else %}Show {{ weak_count }} weaker matches (below {{ min_pct }}%){% endif -%}
+            <button id="load-more"{% if next_band %} data-next="{{ next_band.lo }}"{% endif %}>
+                {%- if has_more %}Load 20 more{% else %}Show {{ next_band.count }} match{{ 'es' if next_band.count != 1 }} from {{ next_band.lo }} to {{ next_band.hi }}%{% endif -%}
             </button>
         </div>
         {% endif %}
@@ -228,43 +236,21 @@
     <script>
         //the token -> url map manaFill in cards.js renders rules text with
         window.MANA_URLS = {{ mana_urls() | tojson }};
+        //the searched card's own figures, so results added by load more can
+        //name what their arrows are measured against, exactly like the
+        //server-rendered ones do
+        var ANCHOR = {price: {{ (card.price or 'no listed price') | tojson }}, rank: {{ (card.rank or 'unranked') | tojson }}};
         /*
-            the load more button. asks the server for the next 20 results as
-            json and glues them onto the bottom of the grid. the page's whole
-            query string (search, filters, picked lines, sort) rides along so
-            page two obeys the same rules as page one.
-
-            the same button handles both tiers: it pages through the strong
-            matches first, then relabels itself to "show weaker matches" and
-            keeps paging through the cards under the minimum match line, with
-            a divider in the grid so the boundary is obvious. that way nobody
-            ever hits a dead end or has to scroll back up to loosen things
+            sort applies itself, because it sits outside the filters panel
+            and people changed it, saw nothing happen, and concluded it was
+            broken. everything INSIDE the panel waits for Apply, currency
+            included: a control that reloads the page the instant you touch
+            it throws you out of the panel you were still working in, which
+            is worse than a control that looks patient
         */
-        /*
-            the widgets that apply themselves. currency was already one:
-            waiting behind Apply makes a toggle look dead. sort does the
-            same, because it was a control people changed, saw nothing
-            happen, and concluded was broken.
-
-            the rule the bar follows: widgets apply on the spot, typed
-            text (the filter box) waits for Apply
-        */
-        var selfApplying = document.querySelectorAll(
-            '.filter-bar select[name="cur"], .filter-bar select[name="sort"]');
-        selfApplying.forEach(function(el) {
-            el.onchange = function() {
-                this.form.requestSubmit();
-            };
-        });
-        /*
-            the fold's open state survives the reload those widgets cause:
-            adv rides the url while the fold is open, and the server reopens
-            it. without this, flipping the currency closed the panel and lost
-            your place mid-filter
-        */
-        document.querySelector(".filter-bar").addEventListener("submit", function() {
-            this.elements.adv.disabled = !this.querySelector(".adv-filters").open;
-        });
+        document.querySelector('.filter-bar select[name="sort"]').onchange = function() {
+            this.form.requestSubmit();
+        };
 
         /*
             one result card as dom elements, mirroring the server-rendered
@@ -312,17 +298,19 @@
                 pct.title = "rules text " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
             }
             if (r.price || r.rank) {
-                var price = el("div", "result-price", div, r.price);
+                var price = el("div", "result-price", div);
+                var figure = el("span", "price-figure " + r.price_vs, price, r.price);
                 if (r.price_vs) {
-                    el("span", "price-vs " + r.price_vs, price, r.price_vs.indexOf("cheaper") > -1 ? "↓" : "↑")
-                        .title = r.price_vs.replace("-", " ") + " than " + cardName;
+                    figure.title = r.price_vs.replace("-", " ") + " than " + cardName + " at " + ANCHOR.price;
+                    el("span", "price-vs", figure, r.price_vs.indexOf("cheaper") > -1 ? "↓" : "↑");
                 }
                 if (r.rank) {
                     var rank = el("span", "result-rank", price, r.rank);
                     rank.title = "edhrec rank, 1 is the most played card in commander";
                     if (r.rank_vs) {
                         el("span", "rank-vs", rank, r.rank_vs == "more-played" ? "↑" : "↓")
-                            .title = (r.rank_vs == "more-played" ? "more" : "less") + " played than " + cardName;
+                            .title = (r.rank_vs == "more-played" ? "more" : "less") + " played than " +
+                                cardName + " at " + ANCHOR.rank;
                     }
                 }
             }
@@ -342,29 +330,52 @@
             return div;
         }
 
+        /*
+            the load more button, which is doing two jobs at once. inside a
+            tier it pages 20 at a time. when a tier runs out it steps down to
+            the next BAND of weaker matches, ten percentage points at a time,
+            and says which range it is about to show.
+
+            the bands are the reason the sorts still mean something down here.
+            the old button opened everything below the line at once, so
+            "cheapest first" over that pile handed back the cheapest 0% match
+            in the database. one band at a time means a sort runs among cards
+            that match about equally well, which is the only way the answer is
+            worth reading
+        */
         var offset = 20;
+        var band = null;     //null is the strong tier, a number is that band
         var btn = document.getElementById("load-more");
         if (btn) {
-            //if the page opened with no strong matches left, the button is
-            //already pointed at the weak tier and starts from the top of it
-            if (btn.dataset.tier == "weak") {
+            //a page that opened with no strong matches at all starts the
+            //button pointed straight at the first band
+            var pending = btn.dataset.next;
+            if (pending !== undefined) {
                 offset = 0;
             }
             btn.onclick = function() {
-                var weakTier = btn.dataset.tier == "weak";
+                var stepping = btn.dataset.next !== undefined;  //moving to a new band
+                var target = stepping ? Number(btn.dataset.next) : band;
+                var resting = btn.textContent;
                 btn.textContent = "Loading...";
                 var params = new URLSearchParams(window.location.search);
-                params.set("offset", offset);
-                if (weakTier) {
-                    params.set("weak", "1");
+                params.set("offset", stepping ? 0 : offset);
+                if (target !== null) {
+                    params.set("band", target);
                 }
                 fetch("/more?" + params.toString())
                     .then(function(r) { return r.json(); })
                     .then(function(data) {
                         var grid = document.querySelector(".card-grid");
-                        //the first weak batch gets a divider so the quality drop is labeled
-                        if (weakTier && offset == 0 && data.results.length) {
-                            el("div", "weak-divider", grid, "matches below " + btn.dataset.min + "% from here");
+                        if (stepping) {
+                            band = target;
+                            offset = 0;
+                            //every band gets its own labelled divider, so it
+                            //is always clear how well the cards below it match
+                            if (data.results.length) {
+                                el("div", "weak-divider", grid,
+                                    "matching " + target + " to " + (target + 9) + "%");
+                            }
                         }
                         data.results.forEach(function(r) {
                             grid.appendChild(buildResult(r));
@@ -372,24 +383,22 @@
                         //the fresh frames need their rotate/flip/transform buttons
                         enhanceCardFrames(grid);
                         offset = offset + data.results.length;
-                        btn.textContent = "Load 20 more";
-                        if (!data.has_more) {
-                            if (!weakTier && data.weak_count > 0) {
-                                //strong matches are done, repoint the button at the weak tier
-                                btn.dataset.tier = "weak";
-                                offset = 0;
-                                btn.textContent = "Show " + data.weak_count + " weaker matches (below " + btn.dataset.min + "%)";
-                            } else {
-                                //truly nothing left, no point keeping the button around
-                                btn.remove();
-                            }
+                        if (data.has_more) {
+                            delete btn.dataset.next;
+                            btn.textContent = "Load 20 more";
+                        } else if (data.next_band) {
+                            btn.dataset.next = data.next_band.lo;
+                            btn.textContent = "Show " + data.next_band.count + " match" +
+                                (data.next_band.count == 1 ? "" : "es") + " from " +
+                                data.next_band.lo + " to " + data.next_band.hi + "%";
+                        } else {
+                            //truly nothing left, no point keeping the button around
+                            btn.remove();
                         }
                     })
                     .catch(function() {
                         //a network hiccup shouldn't strand the button on "Loading..."
-                        btn.textContent = weakTier
-                            ? "Show weaker matches (below " + btn.dataset.min + "%)"
-                            : "Load 20 more";
+                        btn.textContent = resting;
                     });
             };
         }

@@ -39,7 +39,7 @@
                 <button class="guide-info" aria-label="what the percent means"
                     data-title="How close the match is"
                     data-body="80 or higher means a real match. With the slider away from either end this number is a blend of both scores, rules text and concepts, and the list is always ordered by the number you can see. Hover it on a real result and the tooltip breaks the blend back into its two halves.">i</button></div>
-            <div class="result-price">$0.25<span class="price-vs much-cheaper">&darr;</span><span class="result-rank">#412<span class="rank-vs">&uarr;</span></span>
+            <div class="result-price"><span class="price-figure much-cheaper">$0.25<span class="price-vs">&darr;</span></span><span class="result-rank">#412<span class="rank-vs">&uarr;</span></span>
                 <button class="guide-info" aria-label="what the price and rank mean"
                     data-title="Price, play rate, and the two arrows"
                     data-body="The price is the cheapest paper printing in any finish (digital, oversized and gold border versions don't count), from scryfall. The # is edhrec's rank, where #1 is the most played card in commander. Each arrow compares this card to the one you searched: the price arrow points down for cheaper and up for pricier, turning green or red only when the gap is big enough to matter, and the rank arrow points up when the format plays this card more than yours.">i</button></div>
@@ -77,9 +77,13 @@
             the middle, an even split, because either end alone is a specialist's view.</li>
     </ul>
     <p>The slider remembers where you left it. Left to right, the five stops let concepts
-    count for 0, 25, 50, 75, then all 100 percent of the score. Whatever the mix, weaker
-    matches aren't thrown away: the "show weaker matches" button at the bottom of the
-    results pages through everything under the line, weakest last.</p>
+    count for 0, 25, 50, 75, then all 100 percent of the score.</p>
+    <p>Weaker matches aren't thrown away. The button under the results opens them ten
+    percentage points at a time, saying which range it is about to show, and each batch is
+    labelled where it starts. That is deliberate: it keeps the sorts honest. Sorting a
+    single band by price answers "what is the cheapest card that matches this well", where
+    sorting everything below the line at once would just hand you the cheapest card in the
+    game with a faint resemblance.</p>
 
     <h2 id="filters">Filters</h2>
     <p>The wide box in the filter bar takes scryfall style syntax and applies it to the
@@ -90,7 +94,7 @@
         <li><code>o:word</code> rules text contains it, <code>o:"draw a card"</code>
             for phrases</li>
         <li><code>t:legendary</code> the type line must contain this, any word works</li>
-        <li><code>id:wu</code> color identity (fits-within), <code>id:c</code> colorless</li>
+        <li><code>id:wu</code> colour identity (fits-within), <code>id:c</code> colourless</li>
         <li><code>otag:removal</code> the community tags, served from this site's own
             daily mirror of scryfall's tagger data</li>
         <li><code>usd&lt;5</code> <code>eur&gt;=1</code> <code>gbp&lt;2</code> price,
@@ -147,9 +151,6 @@
             questions nothing else can: which cards read ordinarily but do something odd,
             which concepts the game has barely explored, which cards are functional twins.
             Those become browsable pages.</li>
-        <li><strong>A friendlier slider.</strong> The rules text to concepts control is the
-            most misunderstood thing on the site. It needs to look like what it is, two
-            searches being mixed, rather than one setting being turned up.</li>
         <li><strong>Maybe a deck lens.</strong> Paste a list, see the alternatives to each
             card and which ones have no real substitute at all. Further off, and only if
             the browsing above turns out to be the smaller half of what people want.</li>

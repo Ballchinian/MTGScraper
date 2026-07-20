@@ -778,7 +778,7 @@ def tier_cut(blend):
     #below X%" box that exposed this went away: a knob for "how similar" on
     #a similarity site was bloat, and its real job (keeping the price sorts
     #meaningful) is done by the split itself, since everything under the cut
-    #pages in behind the show weaker matches button instead of joining the
+    #pages in behind the weaker-matches button instead of joining the
     #sorts. 80 at both ENDS of the slider: pure mechanics pins the model's
     #real quality boundary there (same set of cards the old raw-90 cutoff
     #kept), and pure concepts shows the calibrated concept score, where good
@@ -985,14 +985,28 @@ def rank_verdict(rank, anchor):
     return "more-played" if rank < anchor else "less-played"
 
 
-def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=20, weak=False, blend=0.0,
+#everything under the cut used to be one undivided pile that the sorts ran
+#over whole, which made "cheapest first" useless the moment you opened it: the
+#cheapest card in a pile that reaches down to 0% is a 0% card, so the sort
+#answered a question nobody asked. the pile is now cut into 10 point bands and
+#only one is ever on the page at a time, so a sort inside it is a sort among
+#cards that match about as well as each other
+WEAK_BAND = 10
+
+
+def band_of(score):
+    return int(score // WEAK_BAND) * WEAK_BAND
+
+
+def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=20, band=None, blend=0.0,
                  currency="usd", dropped=(), forced=(), anchor_price=None, anchor_rank=None):
     #every candidate card keeps all its matching line pairs now instead of
     #just the best one, so results can show "+2 more matching lines".
     #
-    #cards split into two tiers around min_pct: the strong ones are the real
-    #results, the weak ones sit behind the "show weaker matches" button.
-    #weak=True means the caller is paging through that second tier
+    #cards split around min_pct: the strong ones are the real results, and
+    #everything under the line waits in 10 point bands behind a button that
+    #names the band it is about to show. band=None is the strong tier, an
+    #int is that band's lower edge
     pairs_by_card = {}  #other card's oracle_id -> list of (weighted score, real similarity, our line, their line)
     prices = {}         #other card's oracle_id -> price in the chosen currency, for the price sorts
     ranks = {}          #other card's oracle_id -> edhrec rank, for the played sorts
@@ -1150,19 +1164,17 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
 
         #split at the minimum match line. the number that decides which side
         #a card lands on is exactly the number its badge will show (rounded
-        #the same way, so a 79.6 that badges as 80 passes)
+        #the same way, so a 79.6 that badges as 80 passes). everything under
+        #the line is filed into its 10 point band rather than one pile
         strong = []
-        weak_tier = []
+        bands = {}
         for entry in ranked:
-            if round(gate_score(entry)) >= min_pct:
+            score = round(gate_score(entry))
+            if score >= min_pct:
                 strong.append(entry)
             else:
-                weak_tier.append(entry)
-        weak_count = len(weak_tier)
-        if weak:
-            wanted = weak_tier
-        else:
-            wanted = strong
+                bands.setdefault(band_of(score), []).append(entry)
+        wanted = strong if band is None else bands.get(band, [])
 
         #the alternate sorts happen after the filters, the ranking and the
         #tier split, so the percent keeps meaning what it always meant and
@@ -1207,6 +1219,18 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
 
         has_more = len(wanted) > offset + how_many
         page = wanted[offset:offset + how_many]
+
+        #what to offer once this tier runs out: the next band down that
+        #actually holds cards. empty bands are skipped rather than offered
+        #and then found empty, so the button never lies about what is left
+        next_band = None
+        if not has_more:
+            edge = min_pct if band is None else band
+            below = sorted((lo for lo in bands if lo < edge), reverse=True)
+            if below:
+                lo = below[0]
+                next_band = {"lo": lo, "hi": min(lo + WEAK_BAND - 1, edge - 1),
+                             "count": len(bands[lo])}
 
         #one query for the display info of just the cards on this page
         info = {}
@@ -1306,7 +1330,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             "more_count": len(more),
             "more_text": "\n".join(more),
         })
-    return results, has_more, weak_count
+    return results, has_more, next_band
 
 
 #the pool of much-played cards the home page scatters as ghost chips when
@@ -1359,6 +1383,10 @@ def search():
     card["flip"] = card["layout"] == "flip"
 
     filters = read_filters()
+    #the anchor's own price and rank, printed under its type line: every
+    #result's arrows are measured against these, so they have to be visible
+    card["price"] = price_label(card, filters["cur"])
+    card["rank"] = rank_label(card["edhrec_rank"])
     blend = read_blend()
     min_pct = tier_cut(blend)
     sort = read_sort()
@@ -1372,14 +1400,14 @@ def search():
     with pool.connection() as conn:
         chips = anchor_chips(conn, card["oracle_id"], dropped, picked, forced) if blend > 0 and LINE_TAGS else []
 
-    results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, min_pct, sort,
-                                                 blend=BLEND_WEIGHTS[blend], currency=filters["cur"],
-                                                 dropped=dropped, forced=forced,
-                                                 anchor_price=price_in(card, filters["cur"]),
-                                                 anchor_rank=card["edhrec_rank"])
+    results, has_more, next_band = find_similar(card["oracle_id"], picked, filters, min_pct, sort,
+                                                blend=BLEND_WEIGHTS[blend], currency=filters["cur"],
+                                                dropped=dropped, forced=forced,
+                                                anchor_price=price_in(card, filters["cur"]),
+                                                anchor_rank=card["edhrec_rank"])
     resp = make_response(render_template("search.html", query=query, card=card, card_lines=card_lines,
                                          picked_count=len(picked), results=results, has_more=has_more,
-                                         weak_count=weak_count, min_pct=min_pct, errors=filters["errors"],
+                                         next_band=next_band, min_pct=min_pct, errors=filters["errors"],
                                          blend=blend, cur=filters["cur"], types=CARD_TYPES,
                                          tag_chips=chips, dropped_count=sum(1 for c in chips if c["state"] == "off"),
                                          aside_count=sum(1 for c in chips if c["state"] == "aside"),
@@ -1518,17 +1546,21 @@ def more():
         offset = 0
     card = find_card(query)
     if card is None:
-        return {"results": [], "has_more": False, "weak_count": 0}
+        return {"results": [], "has_more": False, "next_band": None}
     card_lines, picked = build_lines(card, read_picked())
-    weak = request.args.get("weak") == "1"
+    #which band of weaker matches to page through, absent for the strong tier
+    try:
+        band = int(request.args["band"])
+    except (KeyError, ValueError):
+        band = None
     blend = read_blend()
     filters = read_filters()
-    results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, tier_cut(blend), read_sort(), offset,
-                                                 weak=weak, blend=BLEND_WEIGHTS[blend], currency=filters["cur"],
-                                                 dropped=read_dropped(), forced=read_forced(),
-                                                 anchor_price=price_in(card, filters["cur"]),
-                                                 anchor_rank=card["edhrec_rank"])
-    return {"results": results, "has_more": has_more, "weak_count": weak_count}
+    results, has_more, next_band = find_similar(card["oracle_id"], picked, filters, tier_cut(blend), read_sort(), offset,
+                                                band=band, blend=BLEND_WEIGHTS[blend], currency=filters["cur"],
+                                                dropped=read_dropped(), forced=read_forced(),
+                                                anchor_price=price_in(card, filters["cur"]),
+                                                anchor_rank=card["edhrec_rank"])
+    return {"results": results, "has_more": has_more, "next_band": next_band}
 
 
 #---- user feedback: "a card is missing" / "this card shouldn't be here" ----
@@ -1586,11 +1618,11 @@ def filter_reasons(card, filters):
         picked = set(filters["colors"])
         shown = card["color_identity"] or "colorless"
         if filters["cmode"] == "exact" and identity != picked:
-            reasons.append("its color identity (" + shown + ") isn't exactly the colors you picked")
+            reasons.append("its colour identity (" + shown + ") isn't exactly the colours you picked")
         elif filters["cmode"] == "include" and not picked <= identity:
-            reasons.append("its color identity (" + shown + ") doesn't include every color you picked")
+            reasons.append("its colour identity (" + shown + ") doesn't include every colour you picked")
         elif filters["cmode"] == "atmost" and not identity <= picked:
-            reasons.append("its color identity (" + shown + ") doesn't fit the colors you picked")
+            reasons.append("its colour identity (" + shown + ") doesn't fit the colours you picked")
     #the same currency the bounds filtered on, so the number quoted back is
     #the one the user was comparing against
     cur = filters.get("cur", "usd")

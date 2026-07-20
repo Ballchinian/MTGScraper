@@ -13,7 +13,7 @@
    now names the job first and shows the smallest useful example, with the
    full grammar one click away on the guide #}
 <input class="filter-query" type="text" name="fq" placeholder='Narrow these results, e.g. o:draw -t:creature usd&lt;=5'
-    title="scryfall syntax, applied to the results: o: rules text, t: type, id: color identity, otag: community tags, usd/eur/gbp and mv bounds. minus negates anything, or/and and parentheses work. the full syntax is on the guide"
+    title="scryfall syntax, applied to the results: o: rules text, t: type, id: colour identity, otag: community tags, usd/eur/gbp and mv bounds. minus negates anything, or/and and parentheses work. the full syntax is on the guide"
     value="{{ request.args.get('fq', '') }}">
 {# which of the four narrowing filters arrive already added: the ones the url
    carries a value for. everything else starts off the page #}
@@ -26,7 +26,11 @@
               request.args.get('cmdr'), request.args.get('gc'), request.args.get('illegal')] %}
     {% if on %}{% set ns.count = ns.count + 1 %}{% endif %}
 {% endfor %}
-<details class="adv-filters" {% if ns.count or request.args.get('adv') %}open{% endif %}>
+{# never opens itself, not on a reload and not because filters are active: a
+   panel that springs open on its own is a panel you have to close, and the
+   count on the summary already answers what an auto-opened panel was there
+   to tell you. it opens when you click it, and applying shuts it again #}
+<details class="adv-filters">
     {# "Filters", not "extra filters": for anyone not writing the syntax by
        hand these ARE the filters, and "extra" filed them as an afterthought.
        the funnel comes from css, on the summary. the count rides here so the
@@ -63,7 +67,8 @@
            bottom disables the inputs of a hidden one so it cannot filter from
            off screen. so anything visible here is something being applied #}
         <div class="adv-slot" data-filter="colors" {% if not on_colors %}hidden{% endif %}>
-            <span class="slot-name">Colors</span>
+            <button type="button" class="slot-off" title="remove this filter" aria-label="remove the colours filter">&times;</button>
+            <span class="slot-name">Colours</span>
             <span class="filter-colors">
                 {# scryfall's own symbol svgs, the alt text names the checkbox for screen readers.
                    unpicked ones are drained to grey: a colour symbol sitting at
@@ -77,15 +82,15 @@
             {# the three ways a colour pick can mean something, like edhrec's.
                at most is first and default because it is the deckbuilding
                question: what can this deck run #}
-            <select name="cmode" aria-label="how the picked colors apply"
-                title="at most: fits inside the picked colors, like deckbuilding (colorless always fits). exactly: this identity and no other. including: these colors at least, more welcome">
+            <select name="cmode" aria-label="how the picked colours apply"
+                title="at most: fits inside the picked colours, like deckbuilding (colourless always fits). exactly: this identity and no other. including: these colours at least, more welcome">
                 <option value="atmost">at most these</option>
                 <option value="exact" {% if request.args.get('cmode') == 'exact' %}selected{% endif %}>exactly these</option>
                 <option value="include" {% if request.args.get('cmode') == 'include' %}selected{% endif %}>including these</option>
             </select>
-            <button type="button" class="slot-off" title="remove this filter" aria-label="remove the colors filter">&times;</button>
         </div>
         <div class="adv-slot" data-filter="price" {% if not on_price %}hidden{% endif %}>
+            <button type="button" class="slot-off" title="remove this filter" aria-label="remove the price filter">&times;</button>
             {# a two-handle range slider was the ask here, but card prices run
                from 0.01 to five figures with almost everything under 5, so a
                linear track would spend 99% of its length on cards nobody
@@ -96,9 +101,9 @@
                 <input type="number" name="pmin" min="0" step="0.01" placeholder="0.00" aria-label="minimum price" value="{{ request.args.get('pmin', '') }}">
                 to <input type="number" name="pmax" min="0" step="0.01" placeholder="any" aria-label="maximum price" value="{{ request.args.get('pmax', '') }}">
             </span>
-            <button type="button" class="slot-off" title="remove this filter" aria-label="remove the price filter">&times;</button>
         </div>
         <div class="adv-slot" data-filter="mv" {% if not on_mv %}hidden{% endif %}>
+            <button type="button" class="slot-off" title="remove this filter" aria-label="remove the mana value filter">&times;</button>
             {# spelled out, not "MV": the abbreviation only reads to players
                fluent in current rules wording. 0 to 20 are the real bounds in
                the card pool, so the placeholders say so #}
@@ -107,22 +112,30 @@
                 <input type="number" name="mvmin" min="0" max="20" step="1" placeholder="0" aria-label="minimum mana value" value="{{ request.args.get('mvmin', '') }}">
                 to <input type="number" name="mvmax" min="0" max="20" step="1" placeholder="20" aria-label="maximum mana value" value="{{ request.args.get('mvmax', '') }}">
             </span>
-            <button type="button" class="slot-off" title="remove this filter" aria-label="remove the mana value filter">&times;</button>
         </div>
-        {# every type the card answers to counts: an Artifact Creature shows
+        {# one control that says what it is doing, rather than eight chips that
+           say nothing when none of them is picked. "Any type" is a legible
+           state: an empty type filter reads as deliberate instead of as a row
+           that quietly did nothing and then vanished on the next apply.
+           every type a card answers to counts, so an Artifact Creature shows
            for Artifact, for Creature, and for both together #}
         <div class="adv-slot" data-filter="type" {% if not on_type %}hidden{% endif %}>
-            <span class="slot-name">Type</span>
-            <span class="filter-types" role="group" aria-label="card types, any picked type matches">
-                {% for t in types %}
-                <label class="type-chip"><input type="checkbox" name="type" value="{{ t }}" {% if t in request.args.getlist('type') %}checked{% endif %}>{{ t }}</label>
-                {% endfor %}
-            </span>
             <button type="button" class="slot-off" title="remove this filter" aria-label="remove the type filter">&times;</button>
+            <span class="slot-name">Type</span>
+            <span class="type-menu">
+                <button type="button" class="type-summary" aria-expanded="false" aria-haspopup="true">
+                    <span class="type-summary-text">Any type</span>
+                </button>
+                <span class="type-options" role="group" aria-label="card types, any picked type matches" hidden>
+                    {% for t in types %}
+                    <label class="type-option"><input type="checkbox" name="type" value="{{ t }}" {% if t in request.args.getlist('type') %}checked{% endif %}>{{ t }}</label>
+                    {% endfor %}
+                </span>
+            </span>
         </div>
         <p class="adv-add">
             <span>Add a filter:</span>
-            <button type="button" class="slot-on" data-add="colors" {% if on_colors %}hidden{% endif %}>colors</button>
+            <button type="button" class="slot-on" data-add="colors" {% if on_colors %}hidden{% endif %}>colours</button>
             <button type="button" class="slot-on" data-add="price" {% if on_price %}hidden{% endif %}>price</button>
             <button type="button" class="slot-on" data-add="mv" {% if on_mv %}hidden{% endif %}>mana value</button>
             <button type="button" class="slot-on" data-add="type" {% if on_type %}hidden{% endif %}>type</button>
@@ -179,6 +192,54 @@
         };
     });
 
+    /*
+        the type menu. the button always says what the filter is currently
+        doing, so "Any type" is the empty state saying so out loud rather
+        than eight unticked boxes leaving you to work it out
+    */
+    var typeMenu = fold.querySelector(".type-menu");
+
+    function labelTypes() {
+        if (!typeMenu) {
+            return;
+        }
+        var typeText = typeMenu.querySelector(".type-summary-text");
+        var picked = [...typeMenu.querySelectorAll(".type-options input:checked")].map(function(i) { return i.value; });
+        //three or more named in full would outgrow the row, and the exact
+        //list is one click away in the menu itself
+        if (!picked.length) {
+            typeText.textContent = "Any type";
+        } else if (picked.length <= 2) {
+            typeText.textContent = picked.join(", ");
+        } else {
+            typeText.textContent = picked.length + " types";
+        }
+        typeMenu.classList.toggle("picked", picked.length > 0);
+    }
+
+    if (typeMenu) {
+        var typeSummary = typeMenu.querySelector(".type-summary");
+        var typeOptions = typeMenu.querySelector(".type-options");
+
+        typeSummary.onclick = function() {
+            var open = typeOptions.hidden;
+            typeOptions.hidden = !open;
+            typeSummary.setAttribute("aria-expanded", String(open));
+        };
+
+        typeOptions.addEventListener("change", labelTypes);
+
+        //clicking away closes the list, the way every menu on the internet does
+        document.addEventListener("click", function(e) {
+            if (!typeMenu.contains(e.target)) {
+                typeOptions.hidden = true;
+                typeSummary.setAttribute("aria-expanded", "false");
+            }
+        });
+
+        labelTypes();
+    }
+
     fold.querySelectorAll(".slot-off").forEach(function(btn) {
         btn.onclick = function() {
             var slot = btn.closest(".adv-slot");
@@ -193,6 +254,9 @@
             });
             slot.hidden = true;
             setEnabled(slot, false);
+            //the type button reads off those checkboxes, so it has to hear
+            //about the clearing or it keeps claiming a filter that is gone
+            labelTypes();
             var add = fold.querySelector('.slot-on[data-add="' + slot.dataset.filter + '"]');
             if (add) {
                 add.hidden = false;
