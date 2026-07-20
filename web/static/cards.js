@@ -133,7 +133,7 @@ document.addEventListener("click", function(e) {
         return;
     }
     var open = document.querySelector(".tap-tip");
-    var el = e.target.closest(".match-line, .more-lines, .concept-tags, .result-rank, .percent");
+    var el = e.target.closest(".match-line, .more-lines, .concept-tags, .result-rank, .percent, .price-vs, .rank-vs");
     if (open) {
         var same = open.anchorEl == el;
         open.remove();

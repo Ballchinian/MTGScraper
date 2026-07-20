@@ -140,9 +140,11 @@
     add/remove pattern, so it has to hold on both pages
 */
 (function() {
-    var panel = document.currentScript.previousElementSibling;
+    //the <details> this script sits directly after, so the include stays
+    //self contained and works on both pages that pull it in
+    var fold = document.currentScript.previousElementSibling;
     var slots = {};
-    panel.querySelectorAll(".adv-slot").forEach(function(slot) {
+    fold.querySelectorAll(".adv-slot").forEach(function(slot) {
         slots[slot.dataset.filter] = slot;
         setEnabled(slot, !slot.hidden);
     });
@@ -157,13 +159,13 @@
     //toggled by hand at each call site
     function refreshNote() {
         var any = Object.keys(slots).some(function(k) { return !slots[k].hidden; });
-        var note = panel.querySelector(".adv-none");
+        var note = fold.querySelector(".adv-none");
         if (note) {
             note.hidden = any;
         }
     }
 
-    panel.querySelectorAll(".slot-on").forEach(function(btn) {
+    fold.querySelectorAll(".slot-on").forEach(function(btn) {
         btn.onclick = function() {
             var slot = slots[btn.dataset.add];
             slot.hidden = false;
@@ -177,7 +179,7 @@
         };
     });
 
-    panel.querySelectorAll(".slot-off").forEach(function(btn) {
+    fold.querySelectorAll(".slot-off").forEach(function(btn) {
         btn.onclick = function() {
             var slot = btn.closest(".adv-slot");
             //cleared as well as hidden: a stale value coming back the next
@@ -191,7 +193,7 @@
             });
             slot.hidden = true;
             setEnabled(slot, false);
-            var add = panel.querySelector('.slot-on[data-add="' + slot.dataset.filter + '"]');
+            var add = fold.querySelector('.slot-on[data-add="' + slot.dataset.filter + '"]');
             if (add) {
                 add.hidden = false;
             }
