@@ -19,12 +19,12 @@ venv/
 .venv/
 
 #finetune outputs, all reproducible: the scripts remake the jsonls and csv,
-#the model itself lives on hugging face. train_rewordings.jsonl is NOT in
-#this list on purpose, its hand written and cant be regenerated
+#the model itself lives on hugging face. every training jsonl lives in
+#traindata/ so a new one needs no new line here. train_rewordings.jsonl is the
+#exception, hand written and not regenerable, so it stays tracked.
+#the star matters: "traindata/" alone stops git descending and the ! never fires
 finetune/mtg-tuned-*/
-finetune/train_pairs.jsonl
-finetune/train_negatives.jsonl
-finetune/train_triplets.jsonl
-finetune/train_keywords.jsonl
+finetune/traindata/*
+!finetune/traindata/train_rewordings.jsonl
 finetune/bakeoff_results.csv
 finetune/sanity_report.txt

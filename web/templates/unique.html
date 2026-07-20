@@ -25,9 +25,11 @@
        you chase the button down the page, and the arrows walk the paper
        trail of everything this browser has been dealt #}
     <div class="unique-controls">
-        <button id="unique-back" title="the previous card you were dealt">&#9664;</button>
-        <button id="unique-again" title="deal another unseen card that fits this search">Repeat this search</button>
-        <button id="unique-fwd" title="the next card in your trail">&#9654;</button>
+        <button id="unique-back" title="the previous card you were dealt" aria-label="previous card on your trail">&#9664;</button>
+        {# the label stays put now (see flashSound in the script): the noises
+           are a flash after each deal, not a permanent replacement #}
+        <button id="unique-again" title="deal another unseen card that fits this search">Deal another card</button>
+        <button id="unique-fwd" title="the next card in your trail" aria-label="next card on your trail">&#9654;</button>
     </div>
 
     <p class="unique-status" id="unique-status"></p>
@@ -208,32 +210,42 @@ form.elements.cur.onchange = function() {
 };
 
 /*
-    the button's label: it opens saying what it does, and once it has been
-    clicked once it stops explaining and just makes the sound of the next
-    card coming off the deck. the title above keeps the plain meaning
+    the button's label. the sounds used to REPLACE it for good after the
+    first click, which meant the main action on the page spent the rest of
+    the session labelled "KABOOM!" and nothing said what it did. now the
+    label is fixed and the noise is a flash: the sound of the card coming
+    off the deck, then the button goes back to saying what it is
 */
+var DEAL_LABEL = "Deal another card";
 var SOUNDS = ["BAA", "BANG!", "BEEP!", "BLOOP", "BOING", "BOOM!", "BOP", "BRRING", "BUZZ", "CHING!", "CLANG!", "CLINK", "CLUNK", "DING!", "DONG!", "DOORAH", "BEEP BOP", "BEEP BOP BEEP BOP", "BEEP BOP BEEP BOP BEEP BOP","HONK!", "KABOOM!", "KACHING!", "KLANG!", "KLUNK!", "PING!", "PLONK!", "POW!", "POP!", "KACHOW"]
-var clicked = false;
 var lastSound = "";
+var soundTimer;
 
-function dealLabel() {
-    if (!clicked) {
-        return "Repeat this search";
-    }
+//the flash. a later deal landing mid-flash clears the pending revert, so
+//the label can never get stranded on a noise
+function flashSound() {
     var s;
     do {
         s = SOUNDS[Math.floor(Math.random() * SOUNDS.length)];
     } while (s == lastSound);
     lastSound = s;
-    return s;
+    againBtn.textContent = s;
+    clearTimeout(soundTimer);
+    soundTimer = setTimeout(function() {
+        againBtn.textContent = DEAL_LABEL;
+    }, 700);
 }
 
+//the deal on load doesn't get a noise, only deals the user asked for
+var clicked = false;
 var dealing = false;
+
 function dealOne() {
     if (dealing) {
         return;
     }
     dealing = true;
+    clearTimeout(soundTimer);
     againBtn.textContent = "Dealing...";
     //the filters and the uniqueness bar travel as a query string, exactly
     //like the search page's filter form would send them
@@ -246,7 +258,11 @@ function dealOne() {
         .then(function(r) { return r.json(); })
         .then(function(data) {
             dealing = false;
-            againBtn.textContent = dealLabel();
+            if (clicked) {
+                flashSound();
+            } else {
+                againBtn.textContent = DEAL_LABEL;
+            }
             if (data.cards.length) {
                 var c = data.cards[0];
                 cache[c.oracle_id] = c;
@@ -271,15 +287,14 @@ function dealOne() {
         })
         .catch(function() {
             //a failed deal shouldn't jam the dealer: dealing would stay
-            //true and every later click would bounce off it
+            //true and every later click would bounce off it. no noise on a
+            //failure either, the card never came off the deck
             dealing = false;
-            againBtn.textContent = dealLabel();
+            againBtn.textContent = DEAL_LABEL;
             statusEl.textContent = "The deal didn't reach the server, try again.";
         });
 }
 
-//the deal on load doesn't count as a click, the label only switches to
-//noises once the user has pressed the button themselves
 form.onsubmit = function(e) {
     e.preventDefault();
     clicked = true;
@@ -291,8 +306,14 @@ againBtn.onclick = function() {
 };
 
 document.getElementById("unique-reset").onclick = function() {
-    //this forgets everything, hence the speed bump
-    if (!confirm("This forgets every card you've been dealt on this device (your whole trail, all " + seen.length + " cards), so they can show up again. Start over?")) {
+    /*
+        the confirm stays: this wipes a trail that can be thousands of
+        cards deep and built up over months, with no undo. what changed is
+        the tone. the old copy was three clauses of warning for what is,
+        in the end, a decision to see cards again, and it read like a
+        destructive-action dialog
+    */
+    if (!confirm("Clear your trail of " + seen.length + " cards? They'll be dealable again.")) {
         return;
     }
     seen = [];

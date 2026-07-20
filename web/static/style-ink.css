@@ -31,9 +31,18 @@
     --muted: #6b6557;
     --teal: #1d6a60;        /* the action color */
     --teal-hover: #277f70;
-    --gold: #8a6d2f;        /* match percents, rare-symbol gold */
+    /* darkened from #8a6d2f, which measured 4.47:1 on paper and so missed
+       AA (4.5) at the 12px these numbers are set in. this is 5.52:1 */
+    --gold: #7a5f28;        /* match percents, rare-symbol gold */
     --wash: #f3eee0;        /* hover and picked backgrounds */
     --serif: "Fraunces", Georgia, serif;
+
+    /* two inline svg icons, carried as urls so the rules below can mask
+       them from currentColor and they cost no extra request. a funnel for
+       the filters fold, and the standard box-and-arrow for links that
+       leave the site */
+    --funnel: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M1.5%202.5h13L9.5%208.5v5l-3%201.5v-6.5z'/%3E%3C/svg%3E");
+    --external: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23000'%20stroke-width='1.7'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M6.5%202.75H2.75v10.5h10.5V9.5'/%3E%3Cpath%20d='M9.75%202.75h3.5v3.5'/%3E%3Cpath%20d='M13.25%202.75L7%209'/%3E%3C/svg%3E");
 }
 
 * { box-sizing: border-box; }
@@ -79,6 +88,11 @@ header {
 
 .search-form input {
     flex: 1;
+    /* a flex item's default min-width is auto, and for an <input> that
+       resolves to its intrinsic ~20-character width. without this the bar
+       refuses to shrink past ~300px and pushes the page sideways on a
+       320px phone, which is where the mobile horizontal scroll came from */
+    min-width: 0;
     padding: 8px 12px;
     border: 0;
     border-radius: 2px 0 0 2px;
@@ -112,6 +126,23 @@ header {
 }
 
 .header-links a:hover { color: #fff; text-decoration: underline; }
+
+/* links that leave the site say so. the mark is the only difference
+   between "Discord" and every other nav item, and target=_blank without
+   one is the classic surprise-new-tab. masked from currentColor so it
+   follows the link through its hover state */
+.header-links a[target="_blank"]::after,
+.home-buttons a[target="_blank"]::after {
+    content: "";
+    display: inline-block;
+    width: 0.72em;
+    height: 0.72em;
+    margin-left: 5px;
+    vertical-align: -0.04em;
+    background: currentColor;
+    -webkit-mask: var(--external) center / contain no-repeat;
+    mask: var(--external) center / contain no-repeat;
+}
 
 /* the autocomplete dropdown, sits right under the search bar. the report
    bar's mini version borrows the exact same look */
@@ -315,12 +346,16 @@ main {
 
 /* scryfall's real symbol svgs as the color toggles. the checkbox hides and
    the whole symbol is the chip, faded means off, the double ring means on */
+/* 0.45 is the opacity every ui on the internet uses for "disabled", so an
+   unpicked color read as one you couldn't pick. 0.7 still sits clearly
+   below the picked state without borrowing that meaning, and the ring
+   below is what actually says "on" */
 .filter-colors label {
     position: relative;
     width: 26px;
     height: 26px;
     border-radius: 50%;
-    opacity: 0.45;
+    opacity: 0.7;
 }
 
 .filter-colors label img {
@@ -329,7 +364,7 @@ main {
     height: 100%;
 }
 
-.filter-colors label:hover { opacity: 0.75; }
+.filter-colors label:hover { opacity: 0.9; }
 
 .filter-colors label:has(input:checked) {
     opacity: 1;
@@ -453,10 +488,15 @@ h2 {
     color: var(--gold);
 }
 
+/* the price used to be green, which quietly claimed something the number
+   doesn't mean: green reads as "good value" and it's just the price,
+   whatever it is. weight carries the prominence instead, so no colour is
+   spent saying nothing */
 .result-price {
-    color: #33774d;
+    color: var(--text);
     font-size: 13px;
-    margin-top: 2px;
+    font-weight: 600;
+    margin-top: 6px;
 }
 
 /* edhrec popularity, riding along the price row. muted grey so the price
@@ -474,29 +514,48 @@ h2 {
     vertical-align: -2px;
 }
 
+/* the lines under a card were all 2px apart, which ran the price, the
+   quoted line and the tag list together into one block. 4-6px lets them
+   read as separate facts */
 .match-line {
     color: var(--muted);
     font-size: 12.5px;
     font-style: italic;
-    margin-top: 2px;
+    margin-top: 4px;
+    line-height: 1.4;
     cursor: help; /* it has a hover tooltip, match the concept line's ? cursor */
 }
 
 /* the mechanics <-> concepts slider in the filter bar, drawn by hand so
    the track and thumb carry the palette instead of the browser's chrome.
    webkit and firefox each need their own pseudo-element pair */
+/* the ticks are the answer to "shouldn't this be a radio?": it looked like
+   a two-ended either/or, so five visible detents say it's a blend you can
+   sit anywhere along. drawn as a repeating gradient on the track rather
+   than a datalist, which browsers style inconsistently */
 .blend-slider input[type="range"] {
     -webkit-appearance: none;
     appearance: none;
-    width: 100px;
+    width: 116px;
     height: 14px;
     background: transparent;
 }
 
+.blend-slider {
+    gap: 6px;
+}
+
+/* the tick geometry, shared by both engines below: the thumb is 14px on a
+   116px input, so its centre travels 7px to 109px in five steps of 25.5px.
+   the gradient tile is offset 6px so each 2px mark lands centred under a
+   detent */
 .blend-slider input[type="range"]::-webkit-slider-runnable-track {
     height: 4px;
-    background: var(--line-strong);
     border-radius: 2px;
+    background-color: var(--line-strong);
+    background-image: repeating-linear-gradient(to right, #a89d84 0 2px, transparent 2px 25.5px);
+    background-repeat: no-repeat;
+    background-position: 6px 0;
 }
 
 .blend-slider input[type="range"]::-webkit-slider-thumb {
@@ -514,8 +573,11 @@ h2 {
 
 .blend-slider input[type="range"]::-moz-range-track {
     height: 4px;
-    background: var(--line-strong);
     border-radius: 2px;
+    background-color: var(--line-strong);
+    background-image: repeating-linear-gradient(to right, #a89d84 0 2px, transparent 2px 25.5px);
+    background-repeat: no-repeat;
+    background-position: 6px 0;
 }
 
 .blend-slider input[type="range"]::-moz-range-thumb {
@@ -567,11 +629,34 @@ h2 {
     margin-right: 20px;
 }
 
+/* "Filters" with a funnel, not "extra filters": these are the main filters
+   for anyone not writing the syntax by hand, and the word "extra" sold
+   them as an afterthought. the funnel is an inline svg so it costs no
+   request and inherits the summary's colour */
 .adv-filters summary {
     cursor: pointer;
     color: var(--teal);
     font-size: 14px;
     width: max-content;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+/* display: flex above already drops the disclosure triangle in blink, and
+   safari needs its own word for it */
+.adv-filters summary::marker { content: ""; }
+
+.adv-filters summary::-webkit-details-marker { display: none; }
+
+.adv-filters summary::before {
+    content: "";
+    width: 13px;
+    height: 13px;
+    background: currentColor;
+    /* a funnel, masked from the text colour so it follows the teal */
+    -webkit-mask: var(--funnel) center / contain no-repeat;
+    mask: var(--funnel) center / contain no-repeat;
 }
 
 /* min match, sort and apply, one cluster at the right end of the row with
@@ -607,6 +692,20 @@ h2 {
     background: #eee7d3;
     padding: 0 4px;
     border-radius: 2px;
+}
+
+/* the subheading over the eligibility toggles. spans both columns of the
+   grid and rides a hairline, so the panel reads as two groups rather than
+   one list with three odd entries at the bottom */
+.adv-group {
+    grid-column: 1 / -1;
+    margin: 10px 0 2px;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--muted);
 }
 
 /* ---- the /guide page: plain sections plus one annotated demo card ---- */
@@ -703,17 +802,25 @@ h2 {
 .min-note button:hover { border-color: #a89d84; color: var(--text); }
 
 /* a pure concept match's badge: teal against the rules-side gold, so the
-   two kinds of number read differently at a glance */
+   two kinds of number read differently at a glance. colour alone can't be
+   the difference though (the two hues are a common confusion pair), so the
+   concept badge also carries a mark: same information, two channels */
 .percent.concept {
     color: var(--teal);
     cursor: help;
+}
+
+.percent.concept::before {
+    content: "\25C7\00a0"; /* an outline diamond, the concept-side mark */
+    font-size: 10px;
 }
 
 /* the shared community tags under a result, why the concepts side ranked it */
 .concept-tags {
     color: var(--teal);
     font-size: 12px;
-    margin-top: 2px;
+    margin-top: 4px;
+    line-height: 1.4;
     cursor: help;
 }
 
@@ -731,11 +838,14 @@ h2 {
     white-space: pre-line;
 }
 
-/* the "+2 more matching lines" hint, the pairs live in its tooltip */
+/* the "+2 more matching lines" hint, the pairs live in its tooltip. muted,
+   not gold: gold is the match-percent colour and this is a hint, and on
+   /unique the same class holds an actual link. one colour meaning both "a
+   number about matching" and "a thing you can click" was the ambiguity */
 .more-lines {
-    color: var(--gold);
+    color: var(--muted);
     font-size: 12px;
-    margin-top: 2px;
+    margin-top: 4px;
     cursor: help;
 }
 
@@ -788,13 +898,17 @@ footer a { color: var(--teal); }
    texture and a faint glow behind the search so it doesn't read as a raw
    css fill. the grain is an inline svg turbulence tile ---- */
 
+/* svh, not vh: on ios vh is the URL-bar-hidden height, so a page built to
+   fill 100vh overflows by exactly the bar's height whenever the bar is
+   showing. that was the slight vertical scroll on ipad. svh is the small
+   (bar-visible) viewport, so the page fits in both states */
 body.home {
     background-color: var(--ink);
     background-image:
         radial-gradient(ellipse 90% 55% at 50% 38%, rgba(236, 231, 216, 0.07), transparent 70%),
         url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='160'%20height='160'%3E%3Cfilter%20id='n'%3E%3CfeTurbulence%20type='fractalNoise'%20baseFrequency='0.9'%20numOctaves='3'%20stitchTiles='stitch'/%3E%3CfeColorMatrix%20type='saturate'%20values='0'/%3E%3C/filter%3E%3Crect%20width='160'%20height='160'%20filter='url(%23n)'%20opacity='0.05'/%3E%3C/svg%3E");
     color: #ece7d8;
-    min-height: 100vh;
+    min-height: 100svh;
     display: flex;
     flex-direction: column;
 }
@@ -806,14 +920,21 @@ body.home main {
     justify-content: center;
     max-width: none;
     width: 100%;
+    /* main's 70vh floor is for pages with real content below the fold. on
+       home it fought the flex column for room and helped push the footer
+       past the bottom edge */
+    min-height: 0;
 }
 
+/* the padding shrinks with the viewport instead of sitting at a fixed
+   60/80: on a short screen that fixed pair was most of what pushed the
+   page past one screenful */
 .home-hero {
     position: relative;
     text-align: center;
     width: 100%;
     max-width: 760px;
-    padding: 60px 20px 80px 20px;
+    padding: clamp(24px, 6vh, 60px) 20px clamp(32px, 8vh, 80px) 20px;
 }
 
 .home-logo { width: 90px; height: 90px; }
@@ -860,6 +981,15 @@ body.home main {
 
 .home-search #suggestions { text-align: left; color: var(--text); }
 
+/* the resting teal is 2.03:1 against the ink page, under the 3:1 wcag asks
+   for a ui component's boundary. the lighter teal gets that to 2.69:1 and
+   keeps white text at 4.82:1 (AA). the two can't both be satisfied on a
+   background this dark, so the text threshold wins and the button leans on
+   its edge against the white input for the rest */
+.home-search button { background: var(--teal-hover); }
+
+.home-search button:hover { background: #2f9482; }
+
 /* the row under the search bar that future buttons slot into. quiet text
    links instead of the old glass pills */
 .home-buttons {
@@ -895,7 +1025,10 @@ body.home main {
 }
 
 /* italic serif and a slight lean each, so they read as scattered card
-   names instead of ui chrome */
+   names instead of ui chrome. the dotted underline is the compromise on
+   "nobody knows these are clickable": a solid one would make them look
+   like nav links and lose the scattered-notes feeling, dotted is the
+   long-standing "quietly interactive" mark and survives the italic serif */
 .float-chip {
     position: absolute;
     pointer-events: auto;
@@ -903,7 +1036,8 @@ body.home main {
     font-style: italic;
     color: #a8b4ac;
     font-size: 15px;
-    text-decoration: none;
+    text-decoration: underline dotted rgba(168, 180, 172, 0.55);
+    text-underline-offset: 3px;
     white-space: nowrap;
     /* long card names get cut instead of stretching toward the middle */
     max-width: 230px;
@@ -912,14 +1046,29 @@ body.home main {
     opacity: 0.9;
 }
 
-.float-chip:nth-child(odd) { transform: rotate(-2deg); }
+/* the lean was -2/+1.5deg, close enough to straight that it read as a
+   rendering accident rather than a choice. four angles across a wider
+   spread say scattered on purpose */
+.float-chip:nth-child(4n+1) { transform: rotate(-3.5deg); }
 
-.float-chip:nth-child(even) { transform: rotate(1.5deg); }
+.float-chip:nth-child(4n+2) { transform: rotate(2.5deg); }
+
+.float-chip:nth-child(4n+3) { transform: rotate(-1.5deg); }
+
+.float-chip:nth-child(4n+4) { transform: rotate(4deg); }
 
 .float-chip:hover {
     color: #fff;
     opacity: 1;
-    text-decoration: underline;
+    text-decoration: underline solid #fff;
+}
+
+/* a keyboard user has to be able to find these too */
+.float-chip:focus-visible {
+    color: #fff;
+    opacity: 1;
+    outline: 2px solid var(--teal-hover);
+    outline-offset: 3px;
 }
 
 body.home footer { color: #a09a88; }
@@ -1074,7 +1223,13 @@ body.home footer a { color: #c6c0ad; }
 
 #unique-reset:hover { border-color: #a89d84; color: var(--text); }
 
-.more-lines a { color: var(--gold); }
+/* the "what comes closest?" link on /unique. teal and underlined, like
+   every other link on the site, so it stops sharing a colour with the
+   uniqueness number sitting two lines above it */
+.more-lines a {
+    color: var(--teal);
+    text-decoration: underline;
+}
 
 /* ---- the feedback loop: report flags, the report bar, /admin ---- */
 
@@ -1327,4 +1482,38 @@ body.home footer a { color: #c6c0ad; }
     .searched-card .card-frame { width: 100%; }
     .header-inner { flex-wrap: wrap; }
     .home-title { font-size: 40px; }
+
+    /* the two-column "widget | what it does" grid can't hold at phone
+       width: max-content on the widget column means a price pair or a
+       select sets a floor the 1fr prose column then gets squeezed under.
+       one column, widget over its explanation */
+    .adv-grid {
+        grid-template-columns: 1fr;
+        gap: 4px;
+    }
+
+    .adv-row {
+        display: block;
+        margin-bottom: 14px;
+    }
+
+    .adv-row p { margin-top: 4px; }
+
+    /* the price and mana-value pairs are the widest widgets in the panel,
+       and two 72px boxes plus their labels overflow a 320px screen */
+    .filter-bar input[type="number"] { width: 64px; }
+
+    .filter-prices { flex-wrap: wrap; }
+
+    /* min match / sort / apply is a right-hand cluster on desktop; the auto
+       margin makes it crowd the edge on a phone */
+    .filter-actions {
+        margin-left: 0;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    /* 12.5px is fine on a desktop monitor at arm's length, low on a phone.
+       these are the floor, nothing here goes under 12 */
+    .match-line, .more-lines, .concept-tags, .result-price { font-size: 13px; }
 }

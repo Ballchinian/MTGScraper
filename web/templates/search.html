@@ -123,8 +123,12 @@
             {% include "_filters.html" %}
             {# min match, sort and apply ride the extra filters line, out of the
                filter box's way, where the sort list has room for its options #}
+            {# "hide below X%" rather than "min match %": the old label named
+               the setting, this one names what happens. nothing is thrown
+               away either way, the cards under the line page in behind the
+               show weaker matches button at the bottom #}
             <span class="filter-actions">
-                <label title="results matching below this wait behind the show weaker matches button">min match % <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}"></label>
+                <label title="matches under this percent wait behind the show weaker matches button at the bottom">hide below <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}">%</label>
                 <select name="sort" aria-label="sort results by">
                     <option value="best">Best match</option>
                     <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
@@ -251,12 +255,26 @@
                 setTimeout(function() { minInput.disabled = false; }, 0);
             }
         });
-        //the currency switch applies itself, waiting behind the Apply button
-        //would make the toggle look dead. requestSubmit rather than submit
-        //so the min-dropping handler above still gets its say
-        document.querySelector('.filter-bar select[name="cur"]').onchange = function() {
-            this.form.requestSubmit();
-        };
+        /*
+            the widgets that apply themselves. currency was already one:
+            waiting behind Apply makes a toggle look dead. sort and the
+            hide-below percent now do the same, because they were the two
+            controls people changed, saw nothing happen, and concluded were
+            broken. requestSubmit rather than submit so the min-dropping
+            handler above still gets its say.
+
+            the rule the bar follows now: widgets apply on the spot, typed
+            text (the filter box) waits for Apply. min is a number box but
+            it fires on change, meaning blur or enter or the spinner, never
+            mid-keystroke
+        */
+        var selfApplying = document.querySelectorAll(
+            '.filter-bar select[name="cur"], .filter-bar select[name="sort"], .filter-bar input[name="min"]');
+        selfApplying.forEach(function(el) {
+            el.onchange = function() {
+                this.form.requestSubmit();
+            };
+        });
         //the keep-it-at-80 button writes min into the url, which is all it
         //takes: from here on the server treats it as the user's choice
         var keepMin = document.getElementById("keep-min");

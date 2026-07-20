@@ -52,8 +52,10 @@
                 <nav class="header-links">
                     <a href="/unique">Unique cards</a>
                     <a href="/guide">How it works</a>
-                    <a href="https://discord.gg/kfjYbRYKbg" target="_blank" rel="noopener">Discord</a>
-                    <a href="https://github.com/Ballchinian/Delvefall" target="_blank" rel="noopener">Github</a>
+                    {# leaves the site, so it carries the little box-and-arrow
+                       (css, on target=_blank) and says so out loud for screen
+                       readers, since the icon is decorative to them #}
+                    <a href="https://discord.gg/kfjYbRYKbg" target="_blank" rel="noopener" aria-label="Discord (opens in a new tab)">Discord</a>
                 </nav>
             </div>
         </header>

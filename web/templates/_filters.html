@@ -6,14 +6,21 @@
    it opens itself whenever any of its filters is active, hidden active
    filters would look like a broken site. state restores from request.args,
    which is simply empty on pages that drive their filters from javascript #}
-<input class="filter-query" type="text" name="fq" placeholder='filter: (o:draw or o:scry) -t:creature usd<=5'
-    title="scryfall syntax, applied to the results: o: rules text, t: type, id: color identity, otag: community tags, usd and mv bounds. minus negates anything, or/and and parentheses work. open extra filters below for details"
+{# the placeholder used to be a full worked example, parentheses and all:
+   accurate, and unreadable to anyone who hadn't already met the syntax. it
+   now names the job first and shows the smallest useful example, with the
+   full grammar still one hover (or one fold) away #}
+<input class="filter-query" type="text" name="fq" placeholder='Narrow these results, e.g. o:draw -t:creature usd&lt;=5'
+    title="scryfall syntax, applied to the results: o: rules text, t: type, id: color identity, otag: community tags, usd and mv bounds. minus negates anything, or/and and parentheses work. open Filters below for details"
     value="{{ request.args.get('fq', '') }}">
 {% set adv_active = request.args.getlist('colors') or request.args.get('pmin') or request.args.get('pmax')
     or request.args.get('mvmin') or request.args.get('mvmax') or request.args.get('type')
     or request.args.get('cmdr') or request.args.get('gc') or request.args.get('illegal') %}
 <details class="adv-filters" {% if adv_active %}open{% endif %}>
-    <summary>extra filters</summary>
+    {# "Filters", not "extra filters": for anyone not writing the syntax by
+       hand these ARE the filters, and "extra" filed them as an afterthought.
+       the funnel comes from css, on the summary #}
+    <summary>Filters</summary>
     <div class="adv-grid">
         <div class="adv-row">
             <span class="filter-colors">
@@ -29,9 +36,14 @@
             or <code>id:c</code> for colorless only</p>
         </div>
         <div class="adv-row">
+            {# a two-handle range slider was the ask here, but card prices run
+               from 0.01 to five figures with almost everything under 5, so a
+               linear track would spend 99% of its length on cards nobody
+               filters for. the real need behind the ask was "what are the
+               limits", and concrete placeholders answer that #}
             <span class="filter-prices">
-                {{ '€' if cur == 'eur' else '$' }} <input type="number" name="pmin" min="0" step="0.01" placeholder="min" aria-label="minimum price" value="{{ request.args.get('pmin', '') }}">
-                to <input type="number" name="pmax" min="0" step="0.01" placeholder="max" aria-label="maximum price" value="{{ request.args.get('pmax', '') }}">
+                {{ '€' if cur == 'eur' else '$' }} <input type="number" name="pmin" min="0" step="0.01" placeholder="0.00" aria-label="minimum price" value="{{ request.args.get('pmin', '') }}">
+                to <input type="number" name="pmax" min="0" step="0.01" placeholder="any" aria-label="maximum price" value="{{ request.args.get('pmax', '') }}">
             </span>
             <p>price bounds, in the currency picked below. cards with no listed price are
             hidden by any price filter. in the filter box: <code>usd&lt;=5</code>, <code>eur&gt;=1</code></p>
@@ -46,11 +58,16 @@
             mean themselves, a bare <code>price&lt;5</code> follows this switch</p>
         </div>
         <div class="adv-row">
+            {# spelled out, not "MV": the abbreviation only reads to players
+               fluent in current rules wording, and the explanation next to it
+               is the thing we're trying not to make people depend on. 0 to 20
+               are the real bounds in the card pool, so the placeholders say
+               so instead of a bare min/max #}
             <span class="filter-prices">
-                MV <input type="number" name="mvmin" min="0" step="1" placeholder="min" aria-label="minimum mana value" value="{{ request.args.get('mvmin', '') }}">
-                to <input type="number" name="mvmax" min="0" step="1" placeholder="max" aria-label="maximum mana value" value="{{ request.args.get('mvmax', '') }}">
+                Mana value <input type="number" name="mvmin" min="0" max="20" step="1" placeholder="0" aria-label="minimum mana value" value="{{ request.args.get('mvmin', '') }}">
+                to <input type="number" name="mvmax" min="0" max="20" step="1" placeholder="20" aria-label="maximum mana value" value="{{ request.args.get('mvmax', '') }}">
             </span>
-            <p>mana value bounds (converted mana cost). in the filter box:
+            <p>also called converted mana cost. in the filter box:
             <code>mv&lt;=2</code>, <code>cmc&gt;=4</code>, both spellings work</p>
         </div>
         <div class="adv-row">
@@ -63,6 +80,11 @@
             <p>the card's type line must contain this. the filter box takes any word, not
             just the list: <code>t:legendary</code>, <code>t:aura</code>, or <code>-t:creature</code> to exclude one</p>
         </div>
+        {# these three aren't more type filters, which is why they don't join
+           the dropdown above: that one asks what a card IS, these ask which
+           pool it's drawn from (deck role, power level, legality). the
+           heading says so, so the split stops looking arbitrary #}
+        <p class="adv-group">Which cards are eligible</p>
         <div class="adv-row">
             <label><input type="checkbox" name="cmdr" value="1" {% if request.args.get('cmdr') %}checked{% endif %}>commanders only</label>
             <p>only legendary creatures, the cards that can lead a commander deck</p>
