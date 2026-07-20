@@ -1097,7 +1097,7 @@ h2 {
     justify-content: center;
     width: 17px;
     height: 17px;
-    vertical-align: -3px;
+    vertical-align: 1px;
     border: 1px solid var(--teal);
     border-radius: 50%;
     color: var(--teal);
