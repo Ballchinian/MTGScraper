@@ -1112,15 +1112,14 @@ h2 {
 .guide-info-flag {
     position: absolute;
     bottom: 4%;
-    right: 17%;
+    right: 15%;
     z-index: 2;
 }
 
 .guide-info-overlay {
     position: absolute;
     bottom: 5%;
-    left: 50%;
-    margin-left: 52px;
+    right: 68%;
     z-index: 2;
 }
 
