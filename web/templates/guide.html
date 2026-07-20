@@ -30,9 +30,10 @@
         <ol class="guide-legend">
             <li>How close the match is. 80 or higher means a real match. With the slider
                 moved (for rules text and concepts) this number blends both scores</li>
-            <li>What it costs, from scryfall, in dollars or euros (a switch in the extra
-                filters picks, dollars to start). It's the cheapest paper printing
-                in any finish (digital, oversized and gold border versions don't count) | How often the card shows up in commander
+            <li>What it costs, from scryfall, in dollars, euros or approximate pounds (a
+                switch in the filters fold picks, dollars to start). It's the cheapest paper
+                printing in any finish (digital, oversized and gold border versions don't
+                count) | How often the card shows up in commander
                 decks, edhrec's rank. #1 is the most played card in the format.</li>
             <li>The line of rules text that matched. Hover it to see which of your card's
                 lines it matched.</li>
@@ -60,55 +61,58 @@
             list, and the list is always in order of the number you see. The slider starts in
             the middle, an even split, because either end alone is a specialist's view.</li>
     </ul>
-    <p>On the mixed positions the min match bar relaxes from 80 to 70 by itself (blended
-    scores are averages, they rarely reach 80). A note says so when it happens, one click
-    keeps your own bar instead. The slider remembers where you left it. Left to right, the
-    five stops let concepts count for 0, 25, 50, 75, then all 100 percent of the score.</p>
+    <p>The slider remembers where you left it. Left to right, the five stops let concepts
+    count for 0, 25, 50, 75, then all 100 percent of the score. Whatever the mix, weaker
+    matches aren't thrown away: the "show weaker matches" button at the bottom of the
+    results pages through everything under the line, weakest last.</p>
 
-    <h2>Search one ability, not the whole card</h2>
-    <p>On the results page your card's rules text is listed line by line. Click a line and
-    the search uses just that ability. Click more lines to combine them.</p>
-
-    <h2>Filters and tricks</h2>
+    <h2 id="filters">Filters</h2>
+    <p>The wide box in the filter bar takes scryfall style syntax and applies it to the
+    results (the search box itself only takes card names).
+    <code>-o:sacrifice usd&lt;=5</code> keeps results cheap and free of sacrifice clauses.
+    The whole vocabulary:</p>
     <ul>
-        <li>Every filter lives behind the "extra filters" fold in the filter bar, each one
-            explained where it sits. Filters narrow who competes, never the scores.</li>
-        <li>The filter bar below the chosen card is a search box that uses scryfall's syntax and 
-            applies it to the results (the search box itself only takes card names). 
-            <code>-o:sacrifice usd&lt;=5</code> keeps results cheap and free of sacrifice clauses. 
-            The full set:
-            <ul>
-                <li><code>o:word</code> rules text contains it, <code>o:"draw a card"</code>
-                    for phrases</li>
-                <li><code>t:legendary</code> the type line must contain this, any word works</li>
-                <li><code>id:wu</code> color identity (fits-within), <code>id:c</code> colorless</li>
-                <li><code>otag:removal</code> the community tags, served from this site's own
-                    daily mirror of scryfall's tagger data</li>
-                <li><code>usd&lt;5</code> <code>usd&gt;=1</code> price in dollars,
-                    <code>eur&lt;5</code> in euros, <code>price&lt;5</code> whichever the
-                    currency switch shows, <code>mv&lt;=2</code> <code>cmc=4</code>
-                    mana value</li>
-                <li><code>is:dfc</code> two-sided cards, <code>is:split</code>
-                    <code>is:mdfc</code> <code>is:saga</code> and other layouts,
-                    <code>is:gamechanger</code> the commander watchlist</li>
-                <li><code>f:commander</code> legal in commander, <code>banned:commander</code>
-                    the reverse (commander is the only format tracked)</li>
-                <li>a <code>-</code> negates anything (<code>-t:creature</code> means no
-                    creatures), words side by side mean and, <code>or</code> and parentheses
-                    group: <code>(o:draw or o:scry) -t:creature</code></li>
-            </ul>
-            That's the whole vocabulary, not all of scryfall's. There's no
-            <code>pow</code>/<code>tou</code>, rarity, set, artist, format beyond commander,
-            or regex here yet, the cards table just doesn't carry those fields. Anything the
-            box doesn't recognise is skipped rather than erroring, so a stray word never
-            breaks the search.
-        </li>
-        <li>Price sorts keep the quality bar: results still have to pass min match, they just
-            reorder by cost. Handy for finding the budget version of an expensive card.</li>
-        <li>Everything under the min match bar still exists. The "show weaker matches" button
-            at the bottom pages through all of it, weakest last.</li>
-        <li>Missing a card you expected? The "expected a card that isn't here?" link checks it
-            against your filters and the matcher, and tells you if one hid it.</li>
+        <li><code>o:word</code> rules text contains it, <code>o:"draw a card"</code>
+            for phrases</li>
+        <li><code>t:legendary</code> the type line must contain this, any word works</li>
+        <li><code>id:wu</code> color identity (fits-within), <code>id:c</code> colorless</li>
+        <li><code>otag:removal</code> the community tags, served from this site's own
+            daily mirror of scryfall's tagger data</li>
+        <li><code>usd&lt;5</code> <code>eur&gt;=1</code> <code>gbp&lt;2</code> price,
+            <code>price&lt;5</code> whichever currency the switch shows,
+            <code>mv&lt;=2</code> <code>cmc=4</code> mana value</li>
+        <li><code>is:dfc</code> two-sided cards, <code>is:split</code>
+            <code>is:mdfc</code> <code>is:saga</code> and other layouts,
+            <code>is:gamechanger</code> the commander watchlist</li>
+        <li><code>f:commander</code> legal in commander, <code>banned:commander</code>
+            the reverse (commander is the only format tracked)</li>
+        <li>a <code>-</code> negates anything (<code>-t:creature</code> means no
+            creatures), words side by side mean and, <code>or</code> and parentheses
+            group: <code>(o:draw or o:scry) -t:creature</code></li>
+    </ul>
+    <p>That's the whole vocabulary, not all of scryfall's. There's no
+    <code>pow</code>/<code>tou</code>, rarity, set, artist, format beyond commander,
+    or regex here yet, the cards table just doesn't carry those fields. Anything the
+    box doesn't recognise is skipped rather than erroring, so a stray word never
+    breaks the search.</p>
+    <p>The widgets in the fold do the same jobs without the typing:</p>
+    <ul>
+        <li>The color symbols take three readings, picked next to them:
+            <strong>at most</strong> fits inside the picked colors like deckbuilding
+            (colorless always fits), <strong>exactly</strong> means that identity and no
+            other, <strong>including</strong> wants those colors at least, extras
+            welcome.</li>
+        <li>Price bounds compare in whichever currency is picked beside them, and any
+            price filter hides cards with no listed price. Pounds are approximate:
+            scryfall quotes dollars and euros, the pound figure converts both and takes
+            the middle.</li>
+        <li>Mana value is what older cards call converted mana cost.</li>
+        <li>The type chips match any picked type: an Artifact Creature shows for
+            Artifact, for Creature, and for both together.</li>
+        <li>"Commanders only" keeps legendary creatures, the cards that can lead a
+            commander deck. "Hide game changers" drops the cards on the official game
+            changer list, for lower powered brackets. Cards that aren't legal in
+            commander stay hidden unless "include illegal" is on.</li>
     </ul>
 
     <h2>Unique cards</h2>

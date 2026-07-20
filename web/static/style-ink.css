@@ -779,9 +779,12 @@ h2 {
 }
 
 /* the demo result sits next to a numbered legend. the dots share the site
-   teal so the numbers read as markers, not content */
+   teal so the numbers read as markers, not content. the wrap is what keeps
+   phones from scrolling sideways: the legend drops under the card instead
+   of holding the row wider than the screen */
 .guide-demo {
     display: flex;
+    flex-wrap: wrap;
     gap: 24px;
     align-items: flex-start;
     margin: 12px 0;
