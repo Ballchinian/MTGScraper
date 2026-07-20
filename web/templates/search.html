@@ -121,14 +121,9 @@
             {% endif %}
             <label class="blend-slider" title="Rules text: cards whose printed text works the same way | Concepts: cards built around the same idea (from community tags)">rules text <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
             {% include "_filters.html" %}
-            {# min match, sort and apply ride the extra filters line, out of the
-               filter box's way, where the sort list has room for its options #}
-            {# "hide below X%" rather than "min match %": the old label named
-               the setting, this one names what happens. nothing is thrown
-               away either way, the cards under the line page in behind the
-               show weaker matches button at the bottom #}
+            {# sort and apply ride the extra filters line, out of the filter
+               box's way, where the sort list has room for its options #}
             <span class="filter-actions">
-                <label title="matches under this percent wait behind the show weaker matches button at the bottom">hide below <input type="number" name="min" min="0" max="100" step="5" value="{{ min_pct }}">%</label>
                 <select name="sort" aria-label="sort results by">
                     <option value="best">Best match</option>
                     <option value="cheap" {% if request.args.get('sort') == 'cheap' %}selected{% endif %}>Price: low to high</option>
@@ -141,17 +136,6 @@
                 <button type="submit">Apply</button>
             </span>
         </form>
-        {# at most one of these two notes shows, and each button just edits
-           the url: keep-min writes min=80 into it, drop-min takes min back
-           out so the server picks the fitting default again #}
-        {% if min_auto %}
-        <p class="min-note">min match slid to {{ min_pct }}% to fit the blend, blended scores are averages and averages land lower.
-            <button type="button" id="keep-min">keep it at 80%</button></p>
-        {% endif %}
-        {% if min_override %}
-        <p class="min-note">min match stays at {{ min_pct }}% because you set it.
-            <button type="button" id="drop-min">let the default {{ min_default }}% decide again</button></p>
-        {% endif %}
 
         <h2>Cards that do something similar
             <a href="#" id="report-missing" class="report-open">expected a card that isn't here?</a></h2>
@@ -180,7 +164,7 @@
         </div>
 
         {% if not results %}
-        <p class="message">Nothing matched with these filters{% if min_pct > 0 %} at {{ min_pct }}%{% endif %}.</p>
+        <p class="message">Nothing matched with these filters.</p>
         {% endif %}
         <div class="card-grid">
             {% for r in results %}
@@ -236,65 +220,21 @@
             ever hits a dead end or has to scroll back up to loosen things
         */
         /*
-            the adaptive min-match default. an untouched min input stays out
-            of the query string so the server can pick the default that fits
-            the slider position (80 at either end, 70 on the mixed detents).
-            the url is the WHOLE story: a min in it is the user's and wins, no
-            min means the default, and the two notes under the filter bar are
-            just buttons that put a min in the url or take it back out.
-            untouched means the url carries no min yet, not that the box still
-            reads the rendered number: a chosen min gets rendered back as the
-            value, so comparing the two alone would call it untouched and drop
-            it on the next submit. the server agrees (see min_auto)
-        */
-        document.querySelector(".filter-bar").addEventListener("submit", function() {
-            var minInput = document.querySelector('.filter-bar input[name="min"]');
-            var minChosen = new URLSearchParams(window.location.search).has("min");
-            if (!minChosen && minInput.value == minInput.defaultValue) {
-                minInput.disabled = true;  //disabled inputs are left out of the query string
-                setTimeout(function() { minInput.disabled = false; }, 0);
-            }
-        });
-        /*
             the widgets that apply themselves. currency was already one:
-            waiting behind Apply makes a toggle look dead. sort and the
-            hide-below percent now do the same, because they were the two
-            controls people changed, saw nothing happen, and concluded were
-            broken. requestSubmit rather than submit so the min-dropping
-            handler above still gets its say.
+            waiting behind Apply makes a toggle look dead. sort does the
+            same, because it was a control people changed, saw nothing
+            happen, and concluded was broken.
 
-            the rule the bar follows now: widgets apply on the spot, typed
-            text (the filter box) waits for Apply. min is a number box but
-            it fires on change, meaning blur or enter or the spinner, never
-            mid-keystroke
+            the rule the bar follows: widgets apply on the spot, typed
+            text (the filter box) waits for Apply
         */
         var selfApplying = document.querySelectorAll(
-            '.filter-bar select[name="cur"], .filter-bar select[name="sort"], .filter-bar input[name="min"]');
+            '.filter-bar select[name="cur"], .filter-bar select[name="sort"]');
         selfApplying.forEach(function(el) {
             el.onchange = function() {
                 this.form.requestSubmit();
             };
         });
-        //the keep-it-at-80 button writes min into the url, which is all it
-        //takes: from here on the server treats it as the user's choice
-        var keepMin = document.getElementById("keep-min");
-        if (keepMin) {
-            keepMin.onclick = function() {
-                var params = new URLSearchParams(window.location.search);
-                params.set("min", "80");
-                window.location.search = params.toString();
-            };
-        }
-        //the way back: drop min from the url and the server goes back to
-        //picking the default that fits the slider
-        var dropMin = document.getElementById("drop-min");
-        if (dropMin) {
-            dropMin.onclick = function() {
-                var params = new URLSearchParams(window.location.search);
-                params.delete("min");
-                window.location.search = params.toString();
-            };
-        }
 
         /*
             one result card as dom elements, mirroring the server-rendered

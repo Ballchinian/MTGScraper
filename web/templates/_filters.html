@@ -42,20 +42,23 @@
                filters for. the real need behind the ask was "what are the
                limits", and concrete placeholders answer that #}
             <span class="filter-prices">
-                {{ '€' if cur == 'eur' else '$' }} <input type="number" name="pmin" min="0" step="0.01" placeholder="0.00" aria-label="minimum price" value="{{ request.args.get('pmin', '') }}">
+                {{ {'usd': '$', 'eur': '€', 'gbp': '£'}[cur] }} <input type="number" name="pmin" min="0" step="0.01" placeholder="0.00" aria-label="minimum price" value="{{ request.args.get('pmin', '') }}">
                 to <input type="number" name="pmax" min="0" step="0.01" placeholder="any" aria-label="maximum price" value="{{ request.args.get('pmax', '') }}">
             </span>
             <p>price bounds, in the currency picked below. cards with no listed price are
             hidden by any price filter. in the filter box: <code>usd&lt;=5</code>, <code>eur&gt;=1</code></p>
         </div>
         <div class="adv-row">
-            <select name="cur" aria-label="currency">
+            <select name="cur" aria-label="currency"
+                title="pounds are approximate: scryfall quotes dollars and euros, the pound figure converts both and takes the middle">
                 <option value="usd">$ dollars</option>
                 <option value="eur" {% if cur == 'eur' %}selected{% endif %}>€ euros</option>
+                <option value="gbp" {% if cur == 'gbp' %}selected{% endif %}>£ pounds (approx.)</option>
             </select>
             <p>the currency every price shows, filters and sorts in. it applies itself and the
-            site remembers it. in the filter box <code>usd</code> and <code>eur</code> always
-            mean themselves, a bare <code>price&lt;5</code> follows this switch</p>
+            site remembers it. pounds are approximate, converted from the other two. in the
+            filter box <code>usd</code>, <code>eur</code> and <code>gbp</code> always mean
+            themselves, a bare <code>price&lt;5</code> follows this switch</p>
         </div>
         <div class="adv-row">
             {# spelled out, not "MV": the abbreviation only reads to players

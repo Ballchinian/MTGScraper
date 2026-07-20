@@ -10,6 +10,7 @@ import time
 import uuid
 import json
 import hashlib
+import urllib.request
 from urllib.parse import quote
 from concurrent.futures import ThreadPoolExecutor
 
@@ -227,7 +228,6 @@ def line_weight(count):
 #only hold until the first ingest run against a database, and a model swap
 #carries its new map along with its new vectors automatically
 CALIBRATION = [(0.0, 0), (0.13, 35), (0.26, 55), (0.45, 70), (0.59, 82), (0.68, 90), (1.0, 100)]
-MIN_CONCEPT = 80
 
 
 def concept_display(raw):
@@ -467,13 +467,74 @@ def rank_label(rank):
     return "#" + str(rank) if rank is not None else ""
 
 
+CURRENCY_SIGNS = {"usd": "$", "eur": "€", "gbp": "£"}
+
+#pounds are derived, not sourced: scryfall prices in dollars and euros only,
+#so the gbp figure is each known price converted and averaged, and the ui
+#says approximate because it is. the rates are the ecb's daily reference
+#rates via frankfurter.app (no key needed), refreshed daily, which is also
+#how often the prices themselves move. the seeds hold whenever the fetch
+#fails, so a rate api outage can never break a page
+_gbp_rates = {"usd": 0.74, "eur": 0.86, "at": 0.0}
+
+
+def gbp_rates():
+    now = time.time()
+    if now - _gbp_rates["at"] > 60 * 60 * 24:
+        #the clock moves before the fetch, so a dead rate api gets retried
+        #daily instead of stalling every request behind the timeout
+        _gbp_rates["at"] = now
+        try:
+            with urllib.request.urlopen("https://api.frankfurter.app/latest?from=GBP&to=USD,EUR", timeout=3) as r:
+                rates = json.load(r)["rates"]
+            _gbp_rates["usd"] = 1.0 / rates["USD"]
+            _gbp_rates["eur"] = 1.0 / rates["EUR"]
+        except Exception:
+            pass
+    return _gbp_rates["usd"], _gbp_rates["eur"]
+
+
+def price_col(currency):
+    #the sql for the price in the chosen currency, everywhere a query
+    #filters or sorts on one. dollars and euros are real columns. pounds
+    #are computed on the spot, and the coalesce pair does the averaging
+    #without a CASE: with both prices known each side is one of them, with
+    #one known both sides collapse to it, with neither the whole thing is
+    #NULL, exactly how the real columns behave for an unpriced card. the
+    #rates are our own floats, not user input, so building them into the
+    #string is safe
+    if currency == "gbp":
+        ru, re_ = gbp_rates()
+        u = "c.price_usd * " + str(round(ru, 6))
+        e = "c.price_eur * " + str(round(re_, 6))
+        return "((coalesce(" + u + ", " + e + ") + coalesce(" + e + ", " + u + ")) / 2)"
+    return "c.price_usd" if currency == "usd" else "c.price_eur"
+
+
+def price_in(c, currency):
+    #one already-fetched row's price in the chosen currency, as a float,
+    #None when the card has no usable price there. the python twin of
+    #price_col, for code that holds the row rather than a query
+    if currency == "gbp":
+        ru, re_ = gbp_rates()
+        known = [float(c[col]) * rate for col, rate in (("price_usd", ru), ("price_eur", re_))
+                 if c[col] is not None]
+        return sum(known) / len(known) if known else None
+    p = c["price_usd"] if currency == "usd" else c["price_eur"]
+    return None if p is None else float(p)
+
+
 def price_label(c, currency):
     #the price string under a card, in whichever currency the toggle picked.
-    #empty when the card has no price in that currency
+    #empty when the card has no price there. dollars and euros print the
+    #stored number as is, pounds are computed so they get pinned to pennies
+    if currency == "gbp":
+        p = price_in(c, currency)
+        return "" if p is None else "£%.2f" % p
     p = c["price_usd"] if currency == "usd" else c["price_eur"]
     if p is None:
         return ""
-    return ("$" if currency == "usd" else "€") + str(p)
+    return CURRENCY_SIGNS[currency] + str(p)
 
 
 def sideways(layout, type_line):
@@ -502,7 +563,7 @@ FQ_TOKEN = re.compile(r"""
     (?P<paren>[()])
   | (?P<kw>and|or)(?=[\s()]|$)
   | (?P<neg>-)
-  | (?P<cfield>usd|price|eur|mv|cmc)\s*(?P<op>>=|<=|=|>|<)\s*(?P<num>\d+(?:\.\d+)?)
+  | (?P<cfield>usd|eur|gbp|price|mv|cmc)\s*(?P<op>>=|<=|=|>|<)\s*(?P<num>\d+(?:\.\d+)?)
   | (?P<key>[a-z]+):(?:"(?P<qval>[^"]*)"|(?P<val>[^\s()]+))
   | (?P<junk>[^\s()]+)
 """, re.IGNORECASE | re.VERBOSE)
@@ -574,10 +635,10 @@ def compile_fq(fq, currency="usd"):
             tokens.append(("-", None))
         elif m.group("cfield"):
             cf = m.group("cfield").lower()
-            #usd and eur always mean themselves, the bare word price follows
-            #the currency toggle
-            cur_col = "c.price_usd" if currency == "usd" else "c.price_eur"
-            col = {"usd": "c.price_usd", "eur": "c.price_eur", "price": cur_col}.get(cf, "c.cmc")
+            #usd, eur and gbp always mean themselves, the bare word price
+            #follows the currency toggle
+            col = {"usd": "c.price_usd", "eur": "c.price_eur", "gbp": price_col("gbp"),
+                   "price": price_col(currency)}.get(cf, "c.cmc")
             tokens.append(("term", (col + " " + m.group("op") + " %s", [float(m.group("num"))])))
         elif m.group("key"):
             value = m.group("qval") if m.group("qval") is not None else m.group("val")
@@ -694,26 +755,18 @@ def read_number(s):
         return None
 
 
-def default_min(blend):
-    #80 at both ENDS of the slider: pure mechanics pins the model's real
-    #quality boundary there (same set of cards the old raw-90 cutoff kept),
-    #and pure concepts shows the calibrated concept score, where good matches
-    #also read 80+. the mixed detents show an average of two axes though, and
-    #averages rarely reach 80, so they relax to 70
+def tier_cut(blend):
+    #where the strong tier ends, in calibrated display units. the "hide
+    #below X%" box that exposed this went away: a knob for "how similar" on
+    #a similarity site was bloat, and its real job (keeping the price sorts
+    #meaningful) is done by the split itself, since everything under the cut
+    #pages in behind the show weaker matches button instead of joining the
+    #sorts. 80 at both ENDS of the slider: pure mechanics pins the model's
+    #real quality boundary there (same set of cards the old raw-90 cutoff
+    #kept), and pure concepts shows the calibrated concept score, where good
+    #matches also read 80+. the mixed detents show an average of two axes,
+    #and averages rarely reach 80, so they sit at 70
     return 70 if 0 < blend < len(BLEND_WEIGHTS) - 1 else 80
-
-
-def read_min(blend=0):
-    #minimum match percent, in calibrated display units. the relaxing above is
-    #only the DEFAULT: an explicit min in the url always wins, and the page
-    #offers a way back to the default whenever one is overriding it.
-    #everything below the line still exists either way, it just pages in
-    #behind the "show weaker matches" button instead of being thrown away
-    try:
-        m = int(request.args.get("min", ""))
-    except ValueError:
-        m = default_min(blend)
-    return max(0, min(m, 100))
 
 
 def read_sort():
@@ -724,13 +777,13 @@ def read_sort():
 
 
 def read_currency():
-    #usd or eur, for every price the site shows, filters and sorts on. the
-    #url wins, then the remembered cookie, then dollars. scryfall only
-    #prices those two currencies, so thats the whole menu
+    #usd, eur or gbp, for every price the site shows, filters and sorts on.
+    #the url wins, then the remembered cookie, then dollars. scryfall only
+    #prices the first two; pounds are derived (see gbp_rates)
     cur = request.args.get("cur")
     if cur is None:
         cur = request.cookies.get("cur", "usd")
-    return cur if cur in ("usd", "eur") else "usd"
+    return cur if cur in CURRENCY_SIGNS else "usd"
 
 
 @app.after_request
@@ -739,7 +792,7 @@ def remember_currency(resp):
     #toggle sticks no matter which page it was flipped on (/search submits
     #its form, /unique deals and trail-walks through fetch)
     cur = request.args.get("cur")
-    if cur in ("usd", "eur"):
+    if cur in CURRENCY_SIGNS:
         resp.set_cookie("cur", cur, max_age=60 * 60 * 24 * 365, samesite="Lax")
     return resp
 
@@ -829,7 +882,7 @@ def filter_sql(filters):
         params.append("^[" + filters["colors"] + "]*$")
     #the bounds compare in whichever currency the toggle shows, so what you
     #filter on is always the number printed under the cards
-    pcol = "c.price_usd" if filters.get("cur", "usd") == "usd" else "c.price_eur"
+    pcol = price_col(filters.get("cur", "usd"))
     if filters["pmin"] is not None:
         where += " AND " + pcol + " >= %s"
         params.append(filters["pmin"])
@@ -848,10 +901,13 @@ def filter_sql(filters):
         where += " AND c.type_line ILIKE %s"
         params.append("%" + filters["type"] + "%")
     if filters["cmdr"]:
-        #commander targets. both words have to be in the type line
-        #("Legendary Creature - Elf Warrior"), matching them separately also
-        #catches things like "Legendary Enchantment Creature"
-        where += " AND c.type_line ILIKE %s AND c.type_line ILIKE %s"
+        #commander targets. both words have to be in the FRONT face's type
+        #line ("Legendary Creature - Elf Warrior"), matching them separately
+        #also catches things like "Legendary Enchantment Creature". front
+        #face only: a double-faced type line carries both faces joined by //
+        #and only the front decides who can lead a deck (Invasion of Theros
+        #is a Battle whose back face is a Legendary Enchantment Creature)
+        where += " AND split_part(c.type_line, '//', 1) ILIKE %s AND split_part(c.type_line, '//', 1) ILIKE %s"
         params.append("%Legendary%")
         params.append("%Creature%")
     if filters["gc"]:
@@ -879,7 +935,7 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
     dates = {}          #other card's oracle_id -> first printing's date, for the newest sort
     where, fparams = filter_sql(filters)
     #the column the price sorts read, matching the currency the page prints
-    pcol = "c.price_usd" if currency == "usd" else "c.price_eur"
+    pcol = price_col(currency)
     #the query card's lines are already embedded in the database, so the
     #model never runs at search time. grab them with their idf counts in one
     #go, on a briefly borrowed connection
@@ -1232,14 +1288,7 @@ def search():
 
     filters = read_filters()
     blend = read_blend()
-    min_pct = read_min(blend)
-    #the note with the keep-my-min button only shows when the relaxed
-    #default actually kicked in, never over a min the user chose
-    min_default = default_min(blend)
-    min_auto = request.args.get("min") is None and min_default == 70
-    #the mirror image: a chosen min wins over the default from here on, so
-    #when it is not the default anyway, offer the way back to it
-    min_override = request.args.get("min") is not None and min_pct != min_default
+    min_pct = tier_cut(blend)
     sort = read_sort()
     card_lines, picked = build_lines(card, read_picked())
     dropped = read_dropped()
@@ -1256,8 +1305,7 @@ def search():
                                                  dropped=dropped, forced=forced)
     resp = make_response(render_template("search.html", query=query, card=card, card_lines=card_lines,
                                          picked_count=len(picked), results=results, has_more=has_more,
-                                         weak_count=weak_count, min_pct=min_pct, min_auto=min_auto,
-                                         min_override=min_override, min_default=min_default,
+                                         weak_count=weak_count, min_pct=min_pct,
                                          blend=blend, cur=filters["cur"], types=CARD_TYPES,
                                          tag_chips=chips, dropped_count=sum(1 for c in chips if c["state"] == "off"),
                                          aside_count=sum(1 for c in chips if c["state"] == "aside"),
@@ -1401,7 +1449,7 @@ def more():
     weak = request.args.get("weak") == "1"
     blend = read_blend()
     filters = read_filters()
-    results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, read_min(blend), read_sort(), offset,
+    results, has_more, weak_count = find_similar(card["oracle_id"], picked, filters, tier_cut(blend), read_sort(), offset,
                                                  weak=weak, blend=BLEND_WEIGHTS[blend], currency=filters["cur"],
                                                  dropped=read_dropped(), forced=read_forced())
     return {"results": results, "has_more": has_more, "weak_count": weak_count}
@@ -1463,14 +1511,14 @@ def filter_reasons(card, filters):
                 break
     #the same currency the bounds filtered on, so the number quoted back is
     #the one the user was comparing against
-    pkey = "price_usd" if filters.get("cur", "usd") == "usd" else "price_eur"
-    sign = "$" if pkey == "price_usd" else "€"
-    if (filters["pmin"] is not None or filters["pmax"] is not None) and card[pkey] is None:
+    cur = filters.get("cur", "usd")
+    price = price_in(card, cur)
+    if (filters["pmin"] is not None or filters["pmax"] is not None) and price is None:
         reasons.append("it has no listed price, and any price filter hides unpriced cards")
-    elif filters["pmin"] is not None and float(card[pkey]) < filters["pmin"]:
-        reasons.append("its price (" + sign + str(card[pkey]) + ") is under your minimum")
-    elif filters["pmax"] is not None and float(card[pkey]) > filters["pmax"]:
-        reasons.append("its price (" + sign + str(card[pkey]) + ") is over your maximum")
+    elif filters["pmin"] is not None and price < filters["pmin"]:
+        reasons.append("its price (" + price_label(card, cur) + ") is under your minimum")
+    elif filters["pmax"] is not None and price > filters["pmax"]:
+        reasons.append("its price (" + price_label(card, cur) + ") is over your maximum")
     if filters["mvmin"] is not None and float(card["cmc"]) < filters["mvmin"]:
         reasons.append("its mana value (" + str(card["cmc"]) + ") is under your minimum")
     if filters["mvmax"] is not None and float(card["cmc"]) > filters["mvmax"]:
@@ -1478,7 +1526,8 @@ def filter_reasons(card, filters):
     if filters["type"] and filters["type"].lower() not in (card["type_line"] or "").lower():
         reasons.append("its type line doesn't include " + filters["type"])
     if filters["cmdr"]:
-        tl = (card["type_line"] or "").lower()
+        #front face only, mirroring filter_sql: the back face can't lead a deck
+        tl = (card["type_line"] or "").split("//")[0].lower()
         if "legendary" not in tl or "creature" not in tl:
             reasons.append("it can't be a commander and \"commanders only\" is on")
     if filters["gc"] and card["game_changer"]:
@@ -1516,7 +1565,7 @@ def feedback():
 
     filters = read_filters()
     blend = read_blend()
-    min_pct = read_min(blend)
+    min_pct = tier_cut(blend)
     _, picked = build_lines(card, read_picked())
     dropped = read_dropped()
 
@@ -1556,6 +1605,19 @@ def feedback():
             expected_pct = best_sim(conn, card["oracle_id"], expected["oracle_id"], picked)
             if expected_pct is None:
                 return {"ok": False, "stored": False, "msg": expected["name"] + " has no rules text the matcher can search, so it can never appear."}
+            #the number quoted back is the one the page badges: past detent 0
+            #that is (1-w) * mech + w * concept, and answering in pure mech
+            #contradicts what the user is looking at (a 100% mech match badges
+            #50% at the middle detent, and "it's already there at 100%" reads
+            #as the site denying its own page). the database keeps the mech
+            #percent, the snapshot keeps the concept half, so the review can
+            #still take the blend apart
+            w = BLEND_WEIGHTS[blend]
+            shown_pct = expected_pct
+            if w > 0:
+                cpct = concept_between(conn, card["oracle_id"], expected["oracle_id"], dropped)
+                snap["concept_pct"] = cpct
+                shown_pct = int(round((1 - w) * expected_pct + w * cpct))
             full = conn.execute("""SELECT color_identity, price_usd, price_eur, cmc, type_line, game_changer, legal_commander, oracle_text
                                    FROM cards WHERE oracle_id = %s""", (expected["oracle_id"],)).fetchone()
             reasons = filter_reasons(full, filters)
@@ -1567,19 +1629,10 @@ def feedback():
                 reasons.append("your filter query hides it")
             if reasons:
                 return {"ok": True, "stored": False,
-                        "msg": expected["name"] + " matches at " + str(expected_pct) + "%, but your filters hide it: " + "; ".join(reasons) + "."}
-            if expected_pct >= min_pct:
+                        "msg": expected["name"] + " matches at " + str(shown_pct) + "%, but your filters hide it: " + "; ".join(reasons) + "."}
+            if shown_pct >= min_pct:
                 return {"ok": True, "stored": False,
-                        "msg": expected["name"] + " is in the results at " + str(expected_pct) + "%, it may just be further down the list."}
-            if blend > 0:
-                #with the slider away from mechanics the card may already be
-                #on the page as a concept match, which is not a model gap
-                cpct = concept_between(conn, card["oracle_id"], expected["oracle_id"], dropped)
-                snap["concept_pct"] = cpct
-                if cpct >= MIN_CONCEPT:
-                    return {"ok": True, "stored": False,
-                            "msg": expected["name"] + " already shows as a concept match at " + str(cpct) +
-                                   "% with your slider, it may just be further down the list."}
+                        "msg": expected["name"] + " is in the results at " + str(shown_pct) + "%, it may just be further down the list."}
             #a real gap: nothing hides the card, the model just scores it under the cutoff
             conn.execute("""INSERT INTO feedback (kind, anchor_id, anchor_name, expected_id, expected_name,
                                                   expected_pct, reason, picked_lines, filters, embed_model, ip)

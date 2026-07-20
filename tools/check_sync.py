@@ -62,7 +62,6 @@ if read("web/prefix_words.py") != read("common/prefix_words.py"):
 #seeds cover virgin databases and should agree too)
 same("CALIBRATION seed", assign_value("web/app.py", "CALIBRATION"), assign_value("common/concept.py", "CALIBRATION"))
 same("MECH_CALIBRATION seed", assign_value("web/app.py", "MECH_CALIBRATION"), assign_value("ingest/update.py", "MECH_CALIBRATION"))
-same("MIN_CONCEPT", assign_value("web/app.py", "MIN_CONCEPT"), assign_value("common/concept.py", "MIN_CONCEPT"))
 
 #the report bakeoff scores pairs the way the site does, with its own copies
 #of the two scoring functions

@@ -617,9 +617,9 @@ h2 {
 
 /* the bar lays out in rows, the same shape on /search and /unique: the
    filter box alone on top, then the extra-filters fold with the blend
-   slider beside it at the left, and (on /search only) min match, sort and
-   apply as a cluster at the right. flex order does the arranging so the
-   shared markup and its tab order stay put */
+   slider beside it at the left, and (on /search only) sort and apply as a
+   cluster at the right. flex order does the arranging so the shared markup
+   and its tab order stay put */
 .blend-slider { order: 2; }
 
 /* the filter box: scryfall syntax applied to the results. the headline
@@ -678,8 +678,8 @@ h2 {
     mask: var(--funnel) center / contain no-repeat;
 }
 
-/* min match, sort and apply, one cluster at the right end of the row with
-   apply last. the auto margin is the gap: it eats the leftover width that
+/* sort and apply, one cluster at the right end of the row with apply
+   last. the auto margin is the gap: it eats the leftover width that
    nothing else wants, so the fold and the slider stay put at the left */
 .filter-actions {
     display: inline-flex;
@@ -800,25 +800,6 @@ h2 {
 .guide-legend li {
     margin-bottom: 10px;
 }
-
-/* the "min match relaxed while blending" note under the filter bar */
-.min-note {
-    font-size: 12.5px;
-    color: var(--muted);
-    margin: 6px 0 0;
-}
-
-.min-note button {
-    font-size: 12px;
-    cursor: pointer;
-    background: #fffef9;
-    color: var(--muted);
-    border: 1px solid var(--line-strong);
-    border-radius: 2px;
-    padding: 2px 10px;
-}
-
-.min-note button:hover { border-color: #a89d84; color: var(--text); }
 
 /* a pure concept match's badge: teal against the rules-side gold, so the
    two kinds of number read differently at a glance. colour alone can't be
@@ -1516,8 +1497,8 @@ body.home main {
 
     .filter-prices { flex-wrap: wrap; }
 
-    /* min match / sort / apply is a right-hand cluster on desktop; the auto
-       margin makes it crowd the edge on a phone */
+    /* sort / apply is a right-hand cluster on desktop; the auto margin
+       makes it crowd the edge on a phone */
     .filter-actions {
         margin-left: 0;
         flex-wrap: wrap;
