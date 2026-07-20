@@ -128,11 +128,6 @@
 
         <form class="filter-bar" action="/search" method="get">
             <input type="hidden" name="q" value="{{ query }}">
-            {# how deep into the weaker matches you had got, so applying a
-               filter keeps them open instead of snapping back to the top.
-               disabled (and so left out of the url) until a band is actually
-               opened, and the script above keeps it current #}
-            <input type="hidden" name="band" value="{{ request.args.get('band', '') }}"{% if not request.args.get('band') %} disabled{% endif %}>
             {% if request.args.get('lines') %}
             <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
             {% endif %}
@@ -398,20 +393,18 @@
             that match about equally well, which is the only way the answer is
             worth reading
         */
+        /*
+            how deep into the weaker matches you have gone lives only in this
+            variable, deliberately: it is not in the url and does not ride the
+            filter form, so applying a filter and reloading the page both put
+            you back at the strong matches. carrying it across an apply was
+            tried and felt wrong, because changing a filter is the moment you
+            want to see what the NEW search turned up, not to be handed the
+            same depth of weak results you were digging through before
+        */
         var offset = 20;
         var band = null;     //null is the strong tier, a number is that band
         var btn = document.getElementById("load-more");
-        //applying a filter should not throw away the weaker matches you had
-        //opened, so the band you reached rides the form as a hidden field and
-        //comes back in the url. the page then walks back down to it below
-        var bandField = document.querySelector('.filter-bar input[name="band"]');
-
-        function rememberBand() {
-            if (bandField) {
-                bandField.value = band === null ? "" : band;
-                bandField.disabled = band === null;
-            }
-        }
 
         function loadNext() {
             var stepping = btn.dataset.next !== undefined;  //moving to a new band
@@ -433,7 +426,6 @@
                     if (stepping) {
                         band = target;
                         offset = 0;
-                        rememberBand();
                         //every band gets its own labelled divider, so it is
                         //always clear that the cards under it are a step worse
                         if (data.results.length) {
@@ -474,32 +466,6 @@
                 offset = 0;
             }
             btn.onclick = loadNext;
-
-            /*
-                a band in the url means the last apply happened with weaker
-                matches open, so the page pours itself back to that depth
-                rather than snapping back to the strong tier and losing your
-                place. it reuses the button's own path, one step at a time.
-                the ceiling is a stop against a doctored url asking for an
-                endless walk, not a real limit anyone reaches
-            */
-            var wanted = new URLSearchParams(window.location.search).get("band");
-            if (wanted !== null) {
-                var steps = 0;
-                (function walk() {
-                    if (!btn.isConnected || steps++ > 40) {
-                        return;
-                    }
-                    if (band !== null && band <= Number(wanted)) {
-                        return;
-                    }
-                    loadNext().then(function(data) {
-                        if (data) {
-                            walk();
-                        }
-                    });
-                })();
-            }
         }
 
         /*
