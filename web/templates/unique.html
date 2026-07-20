@@ -245,6 +245,13 @@ function dealOne() {
         return;
     }
     dealing = true;
+    //the filters fold shuts on the way out, the way applying them does on the
+    //search page: a panel left hanging open over the card you just dealt is
+    //covering the one thing you pressed the button to see
+    var fold = document.querySelector(".adv-filters");
+    if (fold) {
+        fold.open = false;
+    }
     clearTimeout(soundTimer);
     againBtn.textContent = "Dealing...";
     //the filters and the uniqueness bar travel as a query string, exactly

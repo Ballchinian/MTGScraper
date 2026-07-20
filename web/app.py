@@ -998,6 +998,18 @@ def band_of(score):
     return int(score // WEAK_BAND) * WEAK_BAND
 
 
+#how each step down gets described. plain english rather than a percent range
+#because the range means different things at different slider positions, and
+#nobody reading "60 to 69%" knows whether that is nearly good or hopeless.
+#past the ladder every further step is "weaker again", which is honest: by
+#then the only thing worth saying is that it keeps going down
+BAND_WORDS = ("weaker matches", "weaker still", "weaker again")
+
+
+def band_words(step):
+    return BAND_WORDS[min(step, len(BAND_WORDS)) - 1]
+
+
 def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=20, band=None, blend=0.0,
                  currency="usd", dropped=(), forced=(), anchor_price=None, anchor_rank=None):
     #every candidate card keeps all its matching line pairs now instead of
@@ -1222,15 +1234,23 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
 
         #what to offer once this tier runs out: the next band down that
         #actually holds cards. empty bands are skipped rather than offered
-        #and then found empty, so the button never lies about what is left
+        #and then found empty, so the button never lies about what is left.
+        #
+        #the band's percent range is deliberately NOT sent. the cutoff moves
+        #with the slider (80 at the ends, 70 in the middle), so "from 70 to
+        #79%" means a different thing depending on where the slider sits, and
+        #a skipped empty band makes the numbers jump about on top of that.
+        #step is what the caller words: 1 is the first drop below the line,
+        #2 the one after, and the wording ladder lives in the page
         next_band = None
         if not has_more:
             edge = min_pct if band is None else band
-            below = sorted((lo for lo in bands if lo < edge), reverse=True)
+            ladder = sorted(bands, reverse=True)
+            below = [lo for lo in ladder if lo < edge]
             if below:
                 lo = below[0]
-                next_band = {"lo": lo, "hi": min(lo + WEAK_BAND - 1, edge - 1),
-                             "count": len(bands[lo])}
+                next_band = {"lo": lo, "count": len(bands[lo]),
+                             "words": band_words(ladder.index(lo) + 1)}
 
         #one query for the display info of just the cards on this page
         info = {}

@@ -54,8 +54,13 @@
             {# the 488x680 on every card img is scryfall's normal size, so
                the browser knows each picture's shape before it arrives (the
                css scales the width, height: auto keeps the ratio) #}
+            {# the searched card's picture opens it on scryfall, the same as
+               every result's does. it was the one card on the page that
+               didn't, which read as it being decoration rather than a card #}
             <div class="card-frame" data-sideways="{{ '1' if card.sideways else '' }}" data-flip="{{ '1' if card.flip else '' }}" data-back="{{ card.image_back }}">
-                <img src="{{ card.image }}" alt="{{ card.name }}" width="488" height="680" fetchpriority="high">
+                <a href="{{ card.scryfall_uri }}" target="_blank" rel="noopener" title="open {{ card.name }} on scryfall">
+                    <img src="{{ card.image }}" alt="{{ card.name }}" width="488" height="680" fetchpriority="high">
+                </a>
             </div>
             <div class="searched-info">
                 <h1>{{ card.name }} <span class="mana">{{ card.mana_cost | mana }}</span></h1>
@@ -66,8 +71,8 @@
                    page #}
                 {% if card.price or card.rank %}
                 <p class="anchor-figures">
-                    {% if card.price %}<span class="anchor-price">{{ card.price }}</span>{% endif %}
-                    {% if card.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">{{ card.rank }}</span>{% endif %}
+                    {% if card.price %}<span class="anchor-price" title="the cheapest paper printing of {{ card.name }} in any finish, from scryfall. digital, oversized and gold border versions don't count. every price arrow below is measured against this number">{{ card.price }}</span>{% endif %}
+                    {% if card.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander. every play-rate arrow below is measured against this number">{{ card.rank }}</span>{% endif %}
                     <span class="anchor-note">what the arrows below compare against</span>
                 </p>
                 {% endif %}
@@ -123,6 +128,11 @@
 
         <form class="filter-bar" action="/search" method="get">
             <input type="hidden" name="q" value="{{ query }}">
+            {# how deep into the weaker matches you had got, so applying a
+               filter keeps them open instead of snapping back to the top.
+               disabled (and so left out of the url) until a band is actually
+               opened, and the script above keeps it current #}
+            <input type="hidden" name="band" value="{{ request.args.get('band', '') }}"{% if not request.args.get('band') %} disabled{% endif %}>
             {% if request.args.get('lines') %}
             <input type="hidden" name="lines" value="{{ request.args.get('lines') }}">
             {% endif %}
@@ -219,12 +229,12 @@
         </div>
 
         {# the button either pages the tier it is in or steps down to the next
-           band of weaker matches, naming the range it is about to show so
-           nobody opens a pile of 0% cards by accident #}
+           band of weaker matches, saying in words how much worse they get so
+           nobody opens a pile of faint resemblances by accident #}
         {% if has_more or next_band %}
         <div class="load-more-wrap">
-            <button id="load-more"{% if next_band %} data-next="{{ next_band.lo }}"{% endif %}>
-                {%- if has_more %}Load 20 more{% else %}Show {{ next_band.count }} match{{ 'es' if next_band.count != 1 }} from {{ next_band.lo }} to {{ next_band.hi }}%{% endif -%}
+            <button id="load-more"{% if next_band %} data-next="{{ next_band.lo }}" data-words="{{ next_band.words }}"{% endif %}>
+                {%- if has_more %}Load 20 more{% else %}Show {{ next_band.count }} {{ next_band.words }}{% endif -%}
             </button>
         </div>
         {% endif %}
@@ -251,6 +261,51 @@
         document.querySelector('.filter-bar select[name="sort"]').onchange = function() {
             this.form.requestSubmit();
         };
+
+        /*
+            an inverted range (a minimum above its maximum) is reported the
+            same way the browser reports a price below zero: its own bubble,
+            pinned to the offending box, with the panel still open so it can
+            be fixed on the spot. the red note above the results is still
+            there as the backstop for a url typed by hand, it just stops
+            being how anyone normally meets this mistake.
+
+            setCustomValidity is what makes the form refuse to submit, so it
+            has to be kept current as you type, not only checked on the way out
+        */
+        var filterForm = document.querySelector(".filter-bar");
+        var RANGES = [["pmin", "pmax", "price"], ["mvmin", "mvmax", "mana value"]];
+
+        function checkRanges() {
+            RANGES.forEach(function(r) {
+                var lo = filterForm.elements[r[0]];
+                var hi = filterForm.elements[r[1]];
+                if (!lo || !hi) {
+                    return;
+                }
+                var a = parseFloat(lo.value);
+                var b = parseFloat(hi.value);
+                hi.setCustomValidity(!isNaN(a) && !isNaN(b) && a > b
+                    ? "The highest " + r[2] + " has to be at least the lowest (" + lo.value + "), or nothing can fit between them."
+                    : "");
+            });
+        }
+
+        filterForm.addEventListener("input", checkRanges);
+        checkRanges();
+
+        /*
+            a box inside a shut panel cannot be focused, so the browser would
+            refuse to submit and show nothing at all. opening the fold on the
+            way to the bubble covers every native message in there, the
+            built-in min and max ones included
+        */
+        filterForm.addEventListener("invalid", function(e) {
+            var fold = e.target.closest("details");
+            if (fold) {
+                fold.open = true;
+            }
+        }, true);
 
         /*
             one result card as dom elements, mirroring the server-rendered
@@ -346,61 +401,105 @@
         var offset = 20;
         var band = null;     //null is the strong tier, a number is that band
         var btn = document.getElementById("load-more");
+        //applying a filter should not throw away the weaker matches you had
+        //opened, so the band you reached rides the form as a hidden field and
+        //comes back in the url. the page then walks back down to it below
+        var bandField = document.querySelector('.filter-bar input[name="band"]');
+
+        function rememberBand() {
+            if (bandField) {
+                bandField.value = band === null ? "" : band;
+                bandField.disabled = band === null;
+            }
+        }
+
+        function loadNext() {
+            var stepping = btn.dataset.next !== undefined;  //moving to a new band
+            var target = stepping ? Number(btn.dataset.next) : band;
+            var words = btn.dataset.words;
+            var resting = btn.textContent;
+            btn.textContent = "Loading...";
+            var params = new URLSearchParams(window.location.search);
+            params.set("offset", stepping ? 0 : offset);
+            if (target !== null) {
+                params.set("band", target);
+            } else {
+                params.delete("band");
+            }
+            return fetch("/more?" + params.toString())
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    var grid = document.querySelector(".card-grid");
+                    if (stepping) {
+                        band = target;
+                        offset = 0;
+                        rememberBand();
+                        //every band gets its own labelled divider, so it is
+                        //always clear that the cards under it are a step worse
+                        if (data.results.length) {
+                            el("div", "weak-divider", grid, words);
+                        }
+                    }
+                    data.results.forEach(function(r) {
+                        grid.appendChild(buildResult(r));
+                    });
+                    //the fresh frames need their rotate/flip/transform buttons
+                    enhanceCardFrames(grid);
+                    offset = offset + data.results.length;
+                    if (data.has_more) {
+                        delete btn.dataset.next;
+                        delete btn.dataset.words;
+                        btn.textContent = "Load 20 more";
+                    } else if (data.next_band) {
+                        btn.dataset.next = data.next_band.lo;
+                        btn.dataset.words = data.next_band.words;
+                        btn.textContent = "Show " + data.next_band.count + " " + data.next_band.words;
+                    } else {
+                        //truly nothing left, no point keeping the button around
+                        btn.remove();
+                    }
+                    return data;
+                })
+                .catch(function() {
+                    //a network hiccup shouldn't strand the button on "Loading..."
+                    btn.textContent = resting;
+                    return null;
+                });
+        }
+
         if (btn) {
             //a page that opened with no strong matches at all starts the
             //button pointed straight at the first band
-            var pending = btn.dataset.next;
-            if (pending !== undefined) {
+            if (btn.dataset.next !== undefined) {
                 offset = 0;
             }
-            btn.onclick = function() {
-                var stepping = btn.dataset.next !== undefined;  //moving to a new band
-                var target = stepping ? Number(btn.dataset.next) : band;
-                var resting = btn.textContent;
-                btn.textContent = "Loading...";
-                var params = new URLSearchParams(window.location.search);
-                params.set("offset", stepping ? 0 : offset);
-                if (target !== null) {
-                    params.set("band", target);
-                }
-                fetch("/more?" + params.toString())
-                    .then(function(r) { return r.json(); })
-                    .then(function(data) {
-                        var grid = document.querySelector(".card-grid");
-                        if (stepping) {
-                            band = target;
-                            offset = 0;
-                            //every band gets its own labelled divider, so it
-                            //is always clear how well the cards below it match
-                            if (data.results.length) {
-                                el("div", "weak-divider", grid,
-                                    "matching " + target + " to " + (target + 9) + "%");
-                            }
+            btn.onclick = loadNext;
+
+            /*
+                a band in the url means the last apply happened with weaker
+                matches open, so the page pours itself back to that depth
+                rather than snapping back to the strong tier and losing your
+                place. it reuses the button's own path, one step at a time.
+                the ceiling is a stop against a doctored url asking for an
+                endless walk, not a real limit anyone reaches
+            */
+            var wanted = new URLSearchParams(window.location.search).get("band");
+            if (wanted !== null) {
+                var steps = 0;
+                (function walk() {
+                    if (!btn.isConnected || steps++ > 40) {
+                        return;
+                    }
+                    if (band !== null && band <= Number(wanted)) {
+                        return;
+                    }
+                    loadNext().then(function(data) {
+                        if (data) {
+                            walk();
                         }
-                        data.results.forEach(function(r) {
-                            grid.appendChild(buildResult(r));
-                        });
-                        //the fresh frames need their rotate/flip/transform buttons
-                        enhanceCardFrames(grid);
-                        offset = offset + data.results.length;
-                        if (data.has_more) {
-                            delete btn.dataset.next;
-                            btn.textContent = "Load 20 more";
-                        } else if (data.next_band) {
-                            btn.dataset.next = data.next_band.lo;
-                            btn.textContent = "Show " + data.next_band.count + " match" +
-                                (data.next_band.count == 1 ? "" : "es") + " from " +
-                                data.next_band.lo + " to " + data.next_band.hi + "%";
-                        } else {
-                            //truly nothing left, no point keeping the button around
-                            btn.remove();
-                        }
-                    })
-                    .catch(function() {
-                        //a network hiccup shouldn't strand the button on "Loading..."
-                        btn.textContent = resting;
                     });
-            };
+                })();
+            }
         }
 
         /*

@@ -562,7 +562,13 @@ h2 {
     font-size: 13px;
 }
 
-.anchor-price { font-weight: 600; }
+/* both carry a tooltip explaining what the number is and that the arrows
+   below are measured against it, so they get the help cursor that every
+   other explained number on the page wears */
+.anchor-price {
+    font-weight: 600;
+    cursor: help;
+}
 
 .anchor-note {
     color: var(--muted);
@@ -845,19 +851,27 @@ h2 {
 /* the remove button leads the row rather than trailing it: at the right hand
    end it sat a variable distance away depending on how wide the widget was,
    so the four of them never lined up and none of them read as belonging to
-   the filter it removed */
+   the filter it removed. a small red mark and nothing else, since removing
+   a filter is the one destructive thing in the panel and a whole button
+   drawn around it was louder than the filter it removes */
 .slot-off {
     background: none;
     border: 0;
-    color: var(--muted);
-    font-size: 17px;
+    color: #b3352a;
+    font-size: 13px;
     line-height: 1;
     padding: 0 2px;
     cursor: pointer;
     flex-shrink: 0;
 }
 
-.slot-off:hover { color: #c23c2e; }
+.slot-off:hover { color: #8f2a21; }
+
+.slot-off:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+    border-radius: 50%;
+}
 
 /* the add row. the buttons read as things you can switch on, so they are
    outlined rather than filled: filled would look like they already are */
@@ -877,8 +891,8 @@ h2 {
     color: var(--teal);
     background: none;
     border: 1px dashed var(--line-strong);
-    border-radius: 2px;
-    padding: 2px 9px;
+    border-radius: 999px;
+    padding: 3px 12px;
     cursor: pointer;
 }
 
@@ -892,76 +906,79 @@ h2 {
 
 .adv-none { font-style: italic; }
 
-/* the card type control: one button that names its own state, with the
-   checkboxes behind it. eight chips sitting there unticked said nothing
-   about what the filter was doing, and "nothing ticked" was indistinguishable
-   from "filter not working". this button always reads either "Any type" or
-   the types it is keeping */
-.type-menu {
-    position: relative;
-    display: inline-block;
+/* the panel's own controls are rounder than the rest of the site's 2px
+   corners. everything in here is a small thing you switch on and off, and
+   round reads as that where a rectangle reads as a field to fill in. the
+   checkboxes stay square on purpose: a circle is what a radio button looks
+   like, and these are not one-of-a-set choices */
+.adv-panel input[type="number"],
+.adv-panel select {
+    border-radius: 14px;
+    padding-left: 11px;
 }
 
-.type-summary {
-    font-family: inherit;
-    font-size: 13px;
-    color: var(--text);
+.adv-panel select { padding-right: 26px; }
+
+/* the card types, wearing the same on/off language as the colour symbols
+   right above them: off is drained and quiet, on is filled and teal. all
+   eight states are readable at a glance with nothing to open, which is what
+   both a row of identical chips and a dropdown behind a label failed at */
+.filter-types {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 5px;
+}
+
+.type-toggle {
+    position: relative;
+    font-size: 12.5px;
+    color: var(--muted);
     background: #fffef9;
     border: 1px solid var(--line-strong);
-    border-radius: 2px;
-    padding: 4px 24px 4px 10px;
+    border-radius: 999px;
+    padding: 3px 11px;
     cursor: pointer;
-    /* the same drawn chevron the selects wear, so it reads as the same kind
-       of control even though it opens checkboxes rather than options */
-    background-image: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20width='10'%20height='6'%3E%3Cpath%20d='M1%201l4%204%204-4'%20fill='none'%20stroke='%2324333f'%20stroke-width='1.5'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
 }
 
-.type-summary:hover { border-color: var(--teal); }
-
-.type-summary:focus-visible {
-    outline: 2px solid var(--teal);
-    outline-offset: 1px;
-}
-
-/* once it is actually narrowing, it stops looking like a resting control */
-.type-menu.picked .type-summary {
+.type-toggle:hover {
     border-color: var(--teal);
-    color: var(--teal);
-    font-weight: 600;
+    color: var(--text);
 }
 
-.type-options {
+.type-toggle:has(input:checked) {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+}
+
+.type-toggle:has(input:focus-visible) {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+}
+
+.type-toggle input {
     position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    z-index: 40;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 8px 10px;
-    background: var(--panel);
-    border: 1px solid var(--line-strong);
-    border-radius: 3px;
-    box-shadow: 0 4px 12px rgba(33, 31, 26, 0.16);
-    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
 }
 
-.type-options[hidden] { display: none; }
-
-.type-option {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    cursor: pointer;
+.type-note {
+    font-size: 12.5px;
+    color: var(--muted);
+    font-style: italic;
 }
 
-/* the pointer to the guide at the bottom of the panel, where the deleted
-   explanations went */
+.type-note[hidden] { display: none; }
+
+/* the pointer to the guide, riding directly under the filter box it explains
+   rather than inside the filters fold. full basis so it takes the line under
+   the box, and order 0 keeps it next to it whatever the flex order does with
+   the controls after */
 .adv-help {
-    margin: 2px 0 0;
+    flex: 1 1 100%;
+    order: 0;
+    margin: -4px 0 0;
     font-size: 12.5px;
 }
 

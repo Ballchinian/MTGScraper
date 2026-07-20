@@ -15,6 +15,10 @@
 <input class="filter-query" type="text" name="fq" placeholder='Narrow these results, e.g. o:draw -t:creature usd&lt;=5'
     title="scryfall syntax, applied to the results: o: rules text, t: type, id: colour identity, otag: community tags, usd/eur/gbp and mv bounds. minus negates anything, or/and and parentheses work. the full syntax is on the guide"
     value="{{ request.args.get('fq', '') }}">
+{# under the box it explains, not inside the filters fold: it answers the
+   question the box itself provokes, and nobody opens a panel to find out
+   what the thing above the panel is for #}
+<p class="adv-help"><a href="/guide#filters">what syntax from scryfall do we use</a></p>
 {# which of the four narrowing filters arrive already added: the ones the url
    carries a value for. everything else starts off the page #}
 {% set on_colors = request.args.getlist('colors') | length > 0 %}
@@ -113,24 +117,22 @@
                 to <input type="number" name="mvmax" min="0" max="20" step="1" placeholder="20" aria-label="maximum mana value" value="{{ request.args.get('mvmax', '') }}">
             </span>
         </div>
-        {# one control that says what it is doing, rather than eight chips that
-           say nothing when none of them is picked. "Any type" is a legible
-           state: an empty type filter reads as deliberate instead of as a row
-           that quietly did nothing and then vanished on the next apply.
-           every type a card answers to counts, so an Artifact Creature shows
-           for Artifact, for Creature, and for both together #}
+        {# the same on/off language as the colour symbols directly above: off is
+           drained and quiet, on is filled and teal, and nothing has to be
+           opened to see the state of all eight at once. every type a card
+           answers to counts, so an Artifact Creature shows for Artifact, for
+           Creature, and for both together #}
         <div class="adv-slot" data-filter="type" {% if not on_type %}hidden{% endif %}>
             <button type="button" class="slot-off" title="remove this filter" aria-label="remove the type filter">&times;</button>
             <span class="slot-name">Type</span>
-            <span class="type-menu">
-                <button type="button" class="type-summary" aria-expanded="false" aria-haspopup="true">
-                    <span class="type-summary-text">Any type</span>
-                </button>
-                <span class="type-options" role="group" aria-label="card types, any picked type matches" hidden>
-                    {% for t in types %}
-                    <label class="type-option"><input type="checkbox" name="type" value="{{ t }}" {% if t in request.args.getlist('type') %}checked{% endif %}>{{ t }}</label>
-                    {% endfor %}
-                </span>
+            <span class="filter-types" role="group" aria-label="card types, any picked type matches">
+                {% for t in types %}
+                <label class="type-toggle"><input type="checkbox" name="type" value="{{ t }}" {% if t in request.args.getlist('type') %}checked{% endif %}>{{ t }}</label>
+                {% endfor %}
+                {# an empty type filter is a real state, not a broken one, so it
+                   says which state it is rather than leaving eight quiet
+                   buttons to be interpreted #}
+                <span class="type-note" {% if on_type %}hidden{% endif %}>nothing picked, so any type matches</span>
             </span>
         </div>
         <p class="adv-add">
@@ -141,7 +143,6 @@
             <button type="button" class="slot-on" data-add="type" {% if on_type %}hidden{% endif %}>type</button>
             <span class="adv-none" {% if on_colors or on_price or on_mv or on_type %}hidden{% endif %}>nothing is narrowing the results yet</span>
         </p>
-        <p class="adv-help"><a href="/guide#filters">what syntax from scryfall do we use</a></p>
     </div>
 </details>
 <script>
@@ -192,51 +193,19 @@
         };
     });
 
-    /*
-        the type menu. the button always says what the filter is currently
-        doing, so "Any type" is the empty state saying so out loud rather
-        than eight unticked boxes leaving you to work it out
-    */
-    var typeMenu = fold.querySelector(".type-menu");
+    //"nothing picked, so any type matches" only while that is true. an empty
+    //type filter is a legitimate state and this is it saying so
+    var types = fold.querySelector(".filter-types");
 
     function labelTypes() {
-        if (!typeMenu) {
+        if (!types) {
             return;
         }
-        var typeText = typeMenu.querySelector(".type-summary-text");
-        var picked = [...typeMenu.querySelectorAll(".type-options input:checked")].map(function(i) { return i.value; });
-        //three or more named in full would outgrow the row, and the exact
-        //list is one click away in the menu itself
-        if (!picked.length) {
-            typeText.textContent = "Any type";
-        } else if (picked.length <= 2) {
-            typeText.textContent = picked.join(", ");
-        } else {
-            typeText.textContent = picked.length + " types";
-        }
-        typeMenu.classList.toggle("picked", picked.length > 0);
+        types.querySelector(".type-note").hidden = !!types.querySelector("input:checked");
     }
 
-    if (typeMenu) {
-        var typeSummary = typeMenu.querySelector(".type-summary");
-        var typeOptions = typeMenu.querySelector(".type-options");
-
-        typeSummary.onclick = function() {
-            var open = typeOptions.hidden;
-            typeOptions.hidden = !open;
-            typeSummary.setAttribute("aria-expanded", String(open));
-        };
-
-        typeOptions.addEventListener("change", labelTypes);
-
-        //clicking away closes the list, the way every menu on the internet does
-        document.addEventListener("click", function(e) {
-            if (!typeMenu.contains(e.target)) {
-                typeOptions.hidden = true;
-                typeSummary.setAttribute("aria-expanded", "false");
-            }
-        });
-
+    if (types) {
+        types.addEventListener("change", labelTypes);
         labelTypes();
     }
 
