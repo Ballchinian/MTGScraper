@@ -65,12 +65,19 @@
             {% block content %}{% endblock %}
         </main>
 
+        {# the home page leaves this out (it overrides the block empty): no
+           card data is shown there beyond the ghost chips, and the wall of
+           attribution under an otherwise bare hero was the loudest thing on
+           the page. every page that actually shows cards still carries it,
+           which is what the fan content policy and scryfall's terms ask for #}
+        {% block footer %}
         <footer>
             <p>Card data and images from <a href="https://scryfall.com">Scryfall</a>.
             The concept tags come from <a href="https://tagger.scryfall.com">Scryfall Tagger</a>,
             applied by hand by its volunteers.
             Unofficial Fan Content, not approved or endorsed by Wizards of the Coast.</p>
         </footer>
+        {% endblock %}
 
         <script>
         /*

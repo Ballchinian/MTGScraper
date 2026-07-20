@@ -545,17 +545,33 @@ h2 {
     gap: 6px;
 }
 
-/* the tick geometry, shared by both engines below: the thumb is 14px on a
-   116px input, so its centre travels 7px to 109px in five steps of 25.5px.
-   the gradient tile is offset 6px so each 2px mark lands centred under a
-   detent */
+/*
+    the tick geometry, shared by both engines below. the thumb is 14px on a
+    116px input, so its centre can only travel 7px to 109px: it can never
+    reach either edge, because half a thumb always hangs off the end. the
+    five detents therefore sit at 7, 32.5, 58, 83.5 and 109.
+
+    that is why the track is PAINTED rather than coloured. a full-width
+    116px line against marks at 32.5/58/83.5 leaves 31.5px at each end
+    against 23.5px between them, and no arrangement of marks on a full
+    width track can ever come out even (the gap the thumb's own width
+    creates is always there). so the line is a gradient that runs 7 to 109,
+    exactly the thumb's travel, and every gap lands at 25.5px.
+
+    two background layers, notches over line, listed in that order.
+*/
 .blend-slider input[type="range"]::-webkit-slider-runnable-track {
     height: 4px;
     border-radius: 2px;
-    background-color: var(--line-strong);
-    background-image: repeating-linear-gradient(to right, #a89d84 0 2px, transparent 2px 25.5px);
-    background-repeat: no-repeat;
-    background-position: 6px 0;
+    /* the three INNER detents only. the two ends are already marked by the
+       ends of the line and by the words either side, so notching them too
+       drew a mark on top of a mark */
+    background-image:
+        repeating-linear-gradient(to right, #a89d84 0 2px, transparent 2px 25.5px),
+        linear-gradient(to right, transparent 0 7px, var(--line-strong) 7px 109px, transparent 109px);
+    background-repeat: no-repeat, no-repeat;
+    background-position: 31.5px 0, 0 0;
+    background-size: 53px 100%, 100% 100%;
 }
 
 .blend-slider input[type="range"]::-webkit-slider-thumb {
@@ -571,13 +587,16 @@ h2 {
 
 .blend-slider input[type="range"]:hover::-webkit-slider-thumb { background: var(--teal-hover); }
 
+/* same geometry as the webkit block above, see the note there */
 .blend-slider input[type="range"]::-moz-range-track {
     height: 4px;
     border-radius: 2px;
-    background-color: var(--line-strong);
-    background-image: repeating-linear-gradient(to right, #a89d84 0 2px, transparent 2px 25.5px);
-    background-repeat: no-repeat;
-    background-position: 6px 0;
+    background-image:
+        repeating-linear-gradient(to right, #a89d84 0 2px, transparent 2px 25.5px),
+        linear-gradient(to right, transparent 0 7px, var(--line-strong) 7px 109px, transparent 109px);
+    background-repeat: no-repeat, no-repeat;
+    background-position: 31.5px 0, 0 0;
+    background-size: 53px 100%, 100% 100%;
 }
 
 .blend-slider input[type="range"]::-moz-range-thumb {
@@ -816,9 +835,11 @@ h2 {
 }
 
 /* the shared community tags under a result, why the concepts side ranked it */
+/* 12.5 is the floor everything under a card sits on now. 12 was technically
+   the limit and reading it on a phone made the case for not sitting on it */
 .concept-tags {
     color: var(--teal);
-    font-size: 12px;
+    font-size: 12.5px;
     margin-top: 4px;
     line-height: 1.4;
     cursor: help;
@@ -844,7 +865,7 @@ h2 {
    number about matching" and "a thing you can click" was the ambiguity */
 .more-lines {
     color: var(--muted);
-    font-size: 12px;
+    font-size: 12.5px;
     margin-top: 4px;
     cursor: help;
 }
@@ -1046,16 +1067,9 @@ body.home main {
     opacity: 0.9;
 }
 
-/* the lean was -2/+1.5deg, close enough to straight that it read as a
-   rendering accident rather than a choice. four angles across a wider
-   spread say scattered on purpose */
-.float-chip:nth-child(4n+1) { transform: rotate(-3.5deg); }
-
-.float-chip:nth-child(4n+2) { transform: rotate(2.5deg); }
-
-.float-chip:nth-child(4n+3) { transform: rotate(-1.5deg); }
-
-.float-chip:nth-child(4n+4) { transform: rotate(4deg); }
+/* no tilt. it used to lean a couple of degrees each way, and at that size
+   it never read as a deliberate scatter, only as something slightly wrong
+   with the page. straight is cleaner */
 
 .float-chip:hover {
     color: #fff;
@@ -1071,9 +1085,6 @@ body.home main {
     outline-offset: 3px;
 }
 
-body.home footer { color: #a09a88; }
-
-body.home footer a { color: #c6c0ad; }
 
 /* ---- the /unique page ---- */
 
