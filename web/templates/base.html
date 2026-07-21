@@ -54,14 +54,25 @@
                     <button type="submit">Search</button>
                     <div id="suggestions"></div>
                 </form>
-                <nav class="header-links">
+                {# the links exist once and render twice: as the desktop row,
+                   and inside the collapsed menu that replaces it below tablet
+                   width. only one of the two is ever displayed, so screen
+                   readers meet one nav, and a new page added here lands in
+                   both without anyone remembering the second copy #}
+                {% set nav_items %}
                     <a href="/unique">Unique cards</a>
+                    <a href="/atlas">Atlas</a>
                     <a href="/guide">How it works</a>
                     {# leaves the site, so it carries the little box-and-arrow
                        (css, on target=_blank) and says so out loud for screen
                        readers, since the icon is decorative to them #}
                     <a href="https://discord.gg/kfjYbRYKbg" target="_blank" rel="noopener" aria-label="Discord (opens in a new tab)">Discord</a>
-                </nav>
+                {% endset %}
+                <nav class="header-links">{{ nav_items }}</nav>
+                <details class="nav-menu">
+                    <summary aria-label="site menu">Menu</summary>
+                    <nav class="nav-menu-panel">{{ nav_items }}</nav>
+                </details>
             </div>
         </header>
         {% endblock %}
@@ -174,6 +185,22 @@
             document.addEventListener("click", function(e) {
                 if (!box.contains(e.target) && e.target != input) {
                     hide();
+                }
+            });
+        }
+
+        //the collapsed menu closes like the filters fold: escape, or a click
+        //anywhere that isn't it. the home page has no header, hence the guard
+        var navMenu = document.querySelector(".nav-menu");
+        if (navMenu) {
+            document.addEventListener("click", function(e) {
+                if (navMenu.open && !navMenu.contains(e.target)) {
+                    navMenu.open = false;
+                }
+            });
+            document.addEventListener("keydown", function(e) {
+                if (e.key == "Escape") {
+                    navMenu.open = false;
                 }
             });
         }

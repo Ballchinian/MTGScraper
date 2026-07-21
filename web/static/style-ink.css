@@ -42,6 +42,7 @@
        the filters fold, and the standard box-and-arrow for links that
        leave the site */
     --funnel: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M1.5%202.5h13L9.5%208.5v5l-3%201.5v-6.5z'/%3E%3C/svg%3E");
+    --burger: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%3E%3Cpath%20d='M1%203h14M1%208h14M1%2013h14'%20stroke='%23000'%20stroke-width='2'%20stroke-linecap='round'/%3E%3C/svg%3E");
     --external: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2016%2016'%20fill='none'%20stroke='%23000'%20stroke-width='1.7'%20stroke-linecap='round'%20stroke-linejoin='round'%3E%3Cpath%20d='M6.5%202.75H2.75v10.5h10.5V9.5'/%3E%3Cpath%20d='M9.75%202.75h3.5v3.5'/%3E%3Cpath%20d='M13.25%202.75L7%209'/%3E%3C/svg%3E");
 }
 
@@ -127,11 +128,74 @@ header {
 
 .header-links a:hover { color: #fff; text-decoration: underline; }
 
+/* the collapsed nav: one Menu button holding the same links, shown only
+   below the width where the row breathes. this is the pattern that keeps a
+   fifth page from forcing a header redesign, decided before adding /atlas
+   rather than after. a details, like the filters fold, so it needs no
+   script to open and the same two lines of script to close */
+.nav-menu { display: none; position: relative; }
+
+.nav-menu summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: #cfc9b8;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.nav-menu summary::-webkit-details-marker { display: none; }
+
+/* the three-line glyph, masked from currentColor like the funnel */
+.nav-menu summary::before {
+    content: "";
+    width: 0.9em;
+    height: 0.9em;
+    background: currentColor;
+    -webkit-mask: var(--burger) center / contain no-repeat;
+    mask: var(--burger) center / contain no-repeat;
+}
+
+.nav-menu summary:hover, .nav-menu[open] summary { color: #fff; }
+
+/* the panel unfolds in the header's own ink, hanging from the right edge
+   so it never leaves the screen */
+.nav-menu-panel {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 12px);
+    display: flex;
+    flex-direction: column;
+    min-width: 170px;
+    background: var(--ink);
+    border: 1px solid #3a4a58;
+    border-radius: 2px;
+    box-shadow: 0 4px 10px rgba(33, 31, 26, 0.35);
+    padding: 6px 0;
+    z-index: 20;
+}
+
+.nav-menu-panel a {
+    color: #cfc9b8;
+    font-size: 14px;
+    text-decoration: none;
+    padding: 9px 16px;
+    white-space: nowrap;
+}
+
+.nav-menu-panel a:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+}
+
 /* links that leave the site say so. the mark is the only difference
    between "Discord" and every other nav item, and target=_blank without
    one is the classic surprise-new-tab. masked from currentColor so it
    follows the link through its hover state */
 .header-links a[target="_blank"]::after,
+.nav-menu-panel a[target="_blank"]::after,
 .home-buttons a[target="_blank"]::after {
     content: "";
     display: inline-block;
@@ -1935,16 +1999,21 @@ a.atlas-entry:hover { border-color: var(--teal); }
     .float-chip { display: none; }
 }
 
-/* below the width where one row holds everything, the header wraps rather
-   than pushing the whole page sideways (it used to overflow and scroll
-   with the page, discord first off the edge). logo, name and the nav
-   share the top row, the search gets its own full width row under them,
-   and the nav itself wraps too: a fifth tab one day costs a row, never a
-   sideways scroll */
-@media (max-width: 830px) {
+/* below the width where the link row breathes, it collapses into the Menu
+   instead of wrapping. the wrap it replaces bought one extra tab at the
+   cost of a taller header; the menu holds any number of pages, which is
+   what let /atlas join the nav without redoing this again. the search bar
+   stays on the top row, since logo, name and Menu leave it real room */
+@media (max-width: 880px) {
+    .header-links { display: none; }
+    .nav-menu { display: block; margin-left: auto; }
+}
+
+/* only when the top row truly runs out does the search take its own full
+   width row under the name and the menu */
+@media (max-width: 560px) {
     .header-inner { flex-wrap: wrap; gap: 10px 20px; }
     .search-form { order: 3; flex-basis: 100%; }
-    .header-links { margin-left: auto; flex-wrap: wrap; gap: 14px 20px; }
 }
 
 /* the filters panel stops being a dropdown once there is no room to hang one:
