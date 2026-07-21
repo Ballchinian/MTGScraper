@@ -127,9 +127,20 @@ def main():
     import torch
     from datasets import Dataset
     from sentence_transformers import SentenceTransformer, SentenceTransformerTrainer, SentenceTransformerTrainingArguments
-    from sentence_transformers.losses import MultipleNegativesRankingLoss, ContrastiveLoss
-    from sentence_transformers.evaluation import TripletEvaluator, InformationRetrievalEvaluator
-    from sentence_transformers.training_args import BatchSamplers
+    #v5 moved these under .sentence_transformer and deprecated the old paths.
+    #try the new ones, fall back to the old, so this runs on either: colab
+    #installs whatever is latest that day and there is no reason for a version
+    #bump to be the thing that fails an hour into a training run
+    try:
+        from sentence_transformers.sentence_transformer.losses import (
+            MultipleNegativesRankingLoss, ContrastiveLoss)
+        from sentence_transformers.sentence_transformer.evaluation import (
+            TripletEvaluator, InformationRetrievalEvaluator)
+        from sentence_transformers.sentence_transformer.training_args import BatchSamplers
+    except ImportError:
+        from sentence_transformers.losses import MultipleNegativesRankingLoss, ContrastiveLoss
+        from sentence_transformers.evaluation import TripletEvaluator, InformationRetrievalEvaluator
+        from sentence_transformers.training_args import BatchSamplers
     from bakeoff import TRIPLETS
     from common.cards import clean_line
 
@@ -256,7 +267,10 @@ def main():
         num_train_epochs=args.epochs,
         per_device_train_batch_size=batch,
         learning_rate=2e-5,
-        warmup_ratio=0.1,
+        #a float here means a RATIO, an int would mean a literal step count.
+        #transformers v5 deprecated warmup_ratio and folded it into this one
+        #argument, so 0.1 is still "warm up over the first 10% of training"
+        warmup_steps=0.1,
         fp16=torch.cuda.is_available() and not is_gemma,  #T4 has no bf16, keep gemma in fp32
         eval_strategy="no",
         save_strategy="no",
