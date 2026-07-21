@@ -9,18 +9,10 @@ __pycache__/
 .env
 .claude/
 
-#the star matters. "finetune/" alone stops git descending into the folder at
-#all, and then none of the ! lines fire
 finetune/*
 !finetune/README.md
 
-#TEMPORARILY TRACKED so a colab box can clone the repo instead of being handed
-#a zip. exactly what a training run needs, nothing else: the miners, the tag
-#verdicts and the eval sets stay out.
-#
-#to put them back: delete the six ! lines below, git rm -r --cached those
-#paths, and rewrite history again if the exposure still matters. once pushed
-#they are in the log permanently whatever the working tree says afterwards
+
 !finetune/train.py
 !finetune/bakeoff.py
 !finetune/tag_bakeoff.py
@@ -30,8 +22,7 @@ finetune/traindata/*
 !finetune/traindata/train_tag_triplets.jsonl
 !finetune/traindata/tag_testset.jsonl
 
-#the bundle for the colab box. it is the training data in a trench coat, so it
-#must never ride into a commit just because it sits in the repo root
+#the bundle for the colab box
 delvefall-training.zip
 *-training.zip
 
