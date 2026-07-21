@@ -67,22 +67,33 @@ def load_pool():
     return tags, [text[t] for t in tags], rows, golds
 
 
-def prompts_for(model):
-    #a model's own prompts, if it ships any. sentence-transformers exposes them
-    #as a dict on the model; the usual names are query/document for asymmetric
-    #retrieval. anything else gets nothing, which is correct for a symmetric
-    #model rather than a handicap
+#some models ship a prompt name whose VALUE is the empty string, which is not
+#the same as shipping a prompt. bge-small does exactly that, and taking the key
+#at face value scored it with no retrieval prefix at all while reporting that
+#it had used its own. these are the documented prefixes for the models that
+#want one, used when the shipped value is blank
+FALLBACK = {
+    "BAAI/bge-small-en-v1.5": ("Represent this sentence for searching relevant passages: ", ""),
+    "Qwen/Qwen3-Embedding-0.6B":
+        ("Instruct: Given a line of Magic card rules text, retrieve the tags describing it\nQuery: ", ""),
+}
+
+
+def prompts_for(model, name):
+    #the real prompt STRINGS, not just the names, because an empty string is a
+    #missing prompt wearing a name
     have = getattr(model, "prompts", None) or {}
-    q = d = None
-    for name in ("query", "search_query", "Retrieval-query", "STS"):
-        if name in have:
-            q = name
+    q = d = ""
+    for key in ("query", "search_query", "Retrieval-query"):
+        if have.get(key):
+            q = have[key]
             break
-    for name in ("document", "passage", "search_document", "Retrieval-document"):
-        if name in have:
-            d = name
+    for key in ("document", "passage", "search_document", "Retrieval-document"):
+        if have.get(key):
+            d = have[key]
             break
-    return q, d
+    fq, fd = FALLBACK.get(name, ("", ""))
+    return (q or fq), (d or fd)
 
 
 def score(sims, golds, tags):
@@ -123,17 +134,19 @@ def main():
         except Exception as e:
             print("  could not load: " + str(e)[:120])
             continue
-        q, d = prompts_for(model)
-        print("  prompts: query=" + str(q) + " document=" + str(d))
-        kw_q = {"prompt_name": q} if q else {}
-        kw_d = {"prompt_name": d} if d else {}
+        q, d = prompts_for(model, name)
+        dims = model.get_sentence_embedding_dimension()
+        print("  dims: " + str(dims))
+        print("  query prompt:    " + (repr(q[:60]) if q else "(none)"))
+        print("  document prompt: " + (repr(d[:60]) if d else "(none)"))
         L = model.encode(lines, batch_size=args.batch, normalize_embeddings=True,
-                         show_progress_bar=False, **kw_q)
+                         show_progress_bar=False, prompt=q or None)
         T = model.encode(tag_texts, batch_size=args.batch, normalize_embeddings=True,
-                         show_progress_bar=False, **kw_d)
+                         show_progress_bar=False, prompt=d or None)
         r = score(np.asarray(L, dtype=np.float32) @ np.asarray(T, dtype=np.float32).T, golds, tags)
         r["name"] = name
-        r["prompt"] = "own" if (q or d) else "none"
+        r["dims"] = dims
+        r["prompt"] = "yes" if (q or d) else "none"
         results.append(r)
         print("  recall @1 %5.1f%%   @5 %5.1f%%   @10 %5.1f%%   MAP %5.1f%%"
               % (100 * r["r1"], 100 * r["r5"], 100 * r["r10"], 100 * r["map"]))
@@ -143,12 +156,15 @@ def main():
 
     print("\n" + "=" * 70)
     print("BASE MODELS ON THE TAG OBJECTIVE, best recall @10 first")
-    print("%-42s %8s %8s %8s" % ("model", "r@10", "MAP", "prompt"))
+    print("%-42s %7s %7s %6s %7s" % ("model", "r@10", "MAP", "dims", "prompt"))
     for r in sorted(results, key=lambda x: -x["r10"]):
-        print("%-42s %7.1f%% %7.1f%% %8s"
-              % (r["name"][:42], 100 * r["r10"], 100 * r["map"], r["prompt"]))
-    print("\nzero shot only. the best starting point is not guaranteed to be the")
-    print("best finished model, but it is the only evidence available before a run.")
+        print("%-42s %6.1f%% %6.1f%% %6d %7s"
+              % (r["name"][:42], 100 * r["r10"], 100 * r["map"], r["dims"], r["prompt"]))
+    print("\nZERO SHOT ONLY, and read it with two caveats. a model that starts")
+    print("higher need not finish higher: capacity to absorb 36k pairs is a")
+    print("different thing from what it already knows. and DIMS is a real")
+    print("constraint, not trivia: lines.embedding is vector(768), so anything")
+    print("of another width needs EMBED_DIMS and the column type changed too.")
 
 
 if __name__ == "__main__":

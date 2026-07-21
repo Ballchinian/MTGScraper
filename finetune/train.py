@@ -103,7 +103,19 @@ def balance(rows):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
+    #the tuned line-to-line model, not a stock one. decided 2026-07-21: it is
+    #already 768 dims so nothing downstream moves, it already knows tap from
+    #untap and the rest of the vocabulary bakeoff.py tests, and keeping that
+    #knowledge is what lets the guards detect the umbrella-tag problem rather
+    #than just measuring a model relearning magic from scratch.
+    #
+    #the tag bakeoff put five stock bases inside a 2.5 point band zero shot,
+    #which is not a ranking, and the leader was 384 dims: choosing it would
+    #mean changing EMBED_DIMS, the column type and the hnsw index to chase a
+    #lead that almost certainly does not survive fine tuning.
+    #
+    #for a laptop smoke test pass --model sentence-transformers/all-MiniLM-L6-v2
+    ap.add_argument("--model", default="BallchinianMan/mtg-tuned-embeddinggemma-300m")
     ap.add_argument("--epochs", type=int, default=1)
     ap.add_argument("--batch", type=int, default=0, help="0 picks one based on model size")
     ap.add_argument("--objective", default="tags", choices=["tags", "lines", "both"],
