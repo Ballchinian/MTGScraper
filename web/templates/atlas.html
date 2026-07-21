@@ -1,0 +1,38 @@
+{% extends "atlas_base.html" %}
+
+{% block title %}Atlas - Delvefall{% endblock %}
+
+{% block metadesc %}Pages computed from comparing every Magic: The Gathering card against every other one: where the numbers disagree, the ideas the game has barely touched, and the cards that are secretly the same card.{% endblock %}
+
+{# the index is the atlas, it doesn't wear a pointer to itself #}
+{% block atlas_eyebrow %}{% endblock %}
+
+{% block atlas_heading %}The Delvefall Atlas{% endblock %}
+
+{% block atlas_standfirst %}This site runs on having compared every card against every
+other card, on two separate axes. These pages point that data at questions no
+card-at-a-time site can answer.{% endblock %}
+
+{% block atlas_body %}
+    <div class="atlas-pages">
+        <a class="atlas-entry" href="/atlas/two-kinds-of-strange">
+            <h2>Two kinds of strange</h2>
+            <p>Cards whose printed text and community tags disagree about how unusual
+            they are: one-of-a-kind wordings doing everyday jobs, and everyday wordings
+            doing jobs nothing else does.</p>
+        </a>
+        {# the coming pages sit here from the start, dashed and unclickable,
+           so the index never looks like a page with one link on it and the
+           plan is visible. see TODO.md, the atlas pages in order #}
+        <div class="atlas-entry atlas-coming">
+            <h2>Underexplored concepts</h2>
+            <p>The ideas the game has barely printed: concepts carried by a handful of
+            cards, waiting for a design team to notice. In the works.</p>
+        </div>
+        <div class="atlas-entry atlas-coming">
+            <h2>Functional twins</h2>
+            <p>Cards that are the same card wearing two names, found by how close their
+            nearest neighbour sits. In the works.</p>
+        </div>
+    </div>
+{% endblock %}

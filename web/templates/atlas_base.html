@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{# the shared shell for atlas pages: an eyebrow pointing back at the index,
+   a heading, a standfirst, then whatever the page is. later atlas pages
+   reuse this, which is the whole reason it is its own file #}
+
+{% block head_extra %}
+    {# each atlas page is one fixed address, say so for the crawlers #}
+    <link rel="canonical" href="{{ request.url_root.rstrip('/') ~ request.path }}">
+{% endblock %}
+
+{% block content %}
+    <div class="atlas-head">
+        {% block atlas_eyebrow %}<p class="atlas-eyebrow"><a href="/atlas">The Delvefall Atlas</a></p>{% endblock %}
+        <h1>{% block atlas_heading %}{% endblock %}</h1>
+        <p class="atlas-standfirst">{% block atlas_standfirst %}{% endblock %}</p>
+    </div>
+    {% block atlas_body %}{% endblock %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+//ctrl-click (cmd on mac) on a card picture searches it here instead of
+//opening scryfall, the same rabbit-hole hop the results page offers
+document.querySelector("main").addEventListener("click", function(e) {
+    var link = e.target.closest(".card-frame a");
+    if (link && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        window.location = "/search?q=" + encodeURIComponent(link.dataset.name);
+    }
+});
+</script>
+{% endblock %}

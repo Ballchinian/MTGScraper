@@ -1572,6 +1572,123 @@ body.home main {
     text-decoration: underline;
 }
 
+/* ---- the /atlas pages: the shell every atlas page shares ---- */
+
+/* the head mirrors the unique intro: heading and standfirst held to a
+   readable measure while the grids below use the full width */
+.atlas-head { max-width: 720px; }
+
+/* the trail back to the index, in the serif italic the site uses for
+   asides. quiet until hovered, when it turns link-teal */
+.atlas-eyebrow {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 14px;
+    margin: 0 0 2px;
+}
+
+.atlas-eyebrow a { color: var(--muted); text-decoration: none; }
+
+.atlas-eyebrow a:hover { color: var(--teal); text-decoration: underline; }
+
+.atlas-head h1 { margin: 4px 0 8px; }
+
+.atlas-standfirst { color: #4a463a; }
+
+/* the index: one tray per page. the live one is a link wearing teal on its
+   title, the coming ones sit dashed and grey like the set-aside tag chips,
+   there to show where this is going without pretending to be clickable */
+.atlas-pages {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.atlas-entry {
+    display: block;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 2px;
+    padding: 2px 18px 14px;
+    color: var(--text);
+    text-decoration: none;
+}
+
+/* inside a tray the h2 is a title, not a section rule */
+.atlas-entry h2 {
+    border-bottom: 0;
+    padding-bottom: 0;
+    margin: 14px 0 6px;
+    font-size: 20px;
+}
+
+.atlas-entry p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+a.atlas-entry h2 { color: var(--teal); }
+
+a.atlas-entry:hover { border-color: var(--teal); }
+
+.atlas-coming { border-style: dashed; background: transparent; }
+
+.atlas-coming h2 { color: var(--muted); }
+
+/* the two-axis meters under each card: both scores on one 0 to 100 scale,
+   so the page's whole point, the gap between the bars, is the first thing
+   the eye gets. identity rides the label and the value rides in text ink,
+   the fill stays one quiet colour on purpose: the site's palette is too
+   muted to tell two data hues apart, and a bar with its name printed on it
+   doesn't need one */
+.axis-meters {
+    display: grid;
+    gap: 5px;
+    margin-top: 8px;
+}
+
+.axis-meter {
+    display: grid;
+    grid-template-columns: 68px 1fr 34px;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    line-height: 1;
+    color: var(--muted);
+    cursor: help; /* both meters carry an explaining tooltip */
+}
+
+.axis-track {
+    height: 5px;
+    background: var(--line);
+    border-radius: 3px;
+}
+
+/* min-width keeps a 0% score visible as a dot rather than vanishing, the
+   difference between "measured at nothing" and "not measured" */
+.axis-fill {
+    display: block;
+    height: 100%;
+    min-width: 3px;
+    background: var(--ink);
+    border-radius: 3px;
+}
+
+.axis-value {
+    text-align: right;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+}
+
+.atlas-note {
+    color: var(--muted);
+    font-size: 12.5px;
+    margin-top: 28px;
+}
+
 /* ---- the feedback loop: report flags, the report bar, /admin ---- */
 
 /* the "expected a card that isn't here?" link riding the results heading */
@@ -1872,5 +1989,5 @@ body.home main {
 
     /* 12.5px is fine on a desktop monitor at arm's length, low on a phone.
        these are the floor, nothing here goes under 12 */
-    .match-line, .more-lines, .concept-tags, .result-price { font-size: 13px; }
+    .match-line, .more-lines, .concept-tags, .result-price, .axis-meter { font-size: 13px; }
 }

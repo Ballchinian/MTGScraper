@@ -1592,6 +1592,74 @@ def unique_card():
     return {"card": card_json(c, read_currency())}
 
 
+#---- the atlas: linkable pages computed from the all-pairs data ----
+
+#the disagreement page draws only from cards at least this played, because
+#the raw extremes are driftwood: untagged obscurities and functional
+#reprints nobody has met. measured 2026-07-21, the gated lists are the
+#interesting ones and the ungated ones are noise
+ATLAS_RANK = 5000
+ATLAS_COUNT = 12  #cards per direction, three rows of the grid
+
+#the lists only move when the ingest writes new scores, so they are computed
+#once a day per worker, the same lifetime as the pound rates
+_atlas = {"made": 0.0, "strange_words": [], "strange_jobs": [], "total": 0}
+
+
+def atlas_entry(c):
+    #one card the way the atlas templates want it: the card-frame flags plus
+    #both axis scores as percents, the same numbers the slider blends
+    return {
+        "name": c["name"],
+        "image": c["image"],
+        "image_back": c["image_back"] or "",
+        "scryfall_uri": c["scryfall_uri"],
+        "sideways": sideways(c["layout"], c["type_line"]),
+        "flip": c["layout"] == "flip",
+        "mech_pct": int(round(c["uniqueness"] * 100)),
+        "concept_pct": int(round(c["concept_uniqueness"] * 100)),
+        "unique_line": c["unique_line"] or "",
+    }
+
+
+def atlas_strange_lists():
+    #the two ends of the disagreement between the axes: text unlike anything
+    #while tagged like everything, and the reverse
+    now = time.time()
+    if _atlas["strange_words"] and now - _atlas["made"] < 60 * 60 * 24:
+        return _atlas
+    base = ("SELECT " + CARD_FIELDS + """, uniqueness, concept_uniqueness, unique_line
+            FROM cards
+            WHERE uniqueness IS NOT NULL AND concept_uniqueness IS NOT NULL
+              AND edhrec_rank <= %s
+            ORDER BY uniqueness - concept_uniqueness {} LIMIT %s""")
+    with pool.connection() as conn:
+        _atlas["total"] = conn.execute("""SELECT count(*) AS n FROM cards
+                                          WHERE uniqueness IS NOT NULL
+                                            AND concept_uniqueness IS NOT NULL""").fetchone()["n"]
+        _atlas["strange_words"] = [atlas_entry(c) for c in
+                                   conn.execute(base.format("DESC"), (ATLAS_RANK, ATLAS_COUNT))]
+        _atlas["strange_jobs"] = [atlas_entry(c) for c in
+                                  conn.execute(base.format("ASC"), (ATLAS_RANK, ATLAS_COUNT))]
+    _atlas["made"] = now
+    return _atlas
+
+
+@app.route("/atlas")
+def atlas():
+    return render_template("atlas.html")
+
+
+@app.route("/atlas/two-kinds-of-strange")
+def atlas_strange():
+    data = atlas_strange_lists()
+    return render_template("atlas_strange.html",
+                           strange_words=data["strange_words"],
+                           strange_jobs=data["strange_jobs"],
+                           total="{:,}".format(data["total"]),
+                           rank_gate="{:,}".format(ATLAS_RANK))
+
+
 #the load more button on the results page calls this and gets json back. it
 #receives the page's whole query string, so filters and picked lines apply
 @app.route("/more")
@@ -2023,7 +2091,7 @@ def sitemap():
     root = request.url_root
     out = ['<?xml version="1.0" encoding="UTF-8"?>',
            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-    for page in ("", "unique", "guide"):
+    for page in ("", "unique", "guide", "atlas", "atlas/two-kinds-of-strange"):
         out.append("<url><loc>" + root + page + "</loc></url>")
     for name in _sitemap_names["names"]:
         #quote() with its defaults mirrors the urlencode filter building the

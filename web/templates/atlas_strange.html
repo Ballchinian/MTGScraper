@@ -1,0 +1,71 @@
+{% extends "atlas_base.html" %}
+
+{% block title %}Two kinds of strange - Delvefall{% endblock %}
+
+{% block metadesc %}Magic: The Gathering cards whose printed text and community tags disagree about how unusual they are: one-of-a-kind wordings doing everyday jobs, and everyday wordings doing jobs nothing else does.{% endblock %}
+
+{% block atlas_heading %}Two kinds of strange{% endblock %}
+
+{% block atlas_standfirst %}Delvefall scores every card twice: once for how far its
+printed text sits from every other card's, and once for how far its community tags do.
+The two mostly agree. These are the cards where they pull hardest in opposite
+directions, drawn from the {{ rank_gate }} most played cards so every one is something
+you could meet across a table.{% endblock %}
+
+{# one section's worth of cards. the meters put both axis scores on the same
+   0 to 100 scale, so the disagreement is visible as the gap between the two
+   bars. each direction links into search with the slider preset to the end
+   where that card actually has neighbours #}
+{% macro grid(entries, quote, blend, link_text, link_title) %}
+    <div class="card-grid">
+        {% for e in entries %}
+        <div class="result">
+            <div class="card-frame" data-sideways="{{ '1' if e.sideways else '' }}" data-flip="{{ '1' if e.flip else '' }}" data-back="{{ e.image_back }}">
+                <a href="{{ e.scryfall_uri }}" target="_blank" data-name="{{ e.name }}" title="opens on scryfall. ctrl-click to search this card here instead">
+                    <img src="{{ e.image }}" alt="{{ e.name }}" width="488" height="680" loading="lazy">
+                </a>
+            </div>
+            <div class="result-name">{{ e.name }}</div>
+            <div class="axis-meters">
+                <div class="axis-meter" title="how far {{ e.name }}'s printed text sits from every other card's. 100% means nothing in the game comes close">
+                    <span class="axis-label">rules text</span>
+                    <span class="axis-track"><span class="axis-fill" style="width: {{ e.mech_pct }}%"></span></span>
+                    <span class="axis-value">{{ e.mech_pct }}%</span>
+                </div>
+                <div class="axis-meter" title="how far its community tags sit from every other card's, the concepts scryfall tagger's volunteers filed it under">
+                    <span class="axis-label">concepts</span>
+                    <span class="axis-track"><span class="axis-fill" style="width: {{ e.concept_pct }}%"></span></span>
+                    <span class="axis-value">{{ e.concept_pct }}%</span>
+                </div>
+            </div>
+            {% if quote and e.unique_line %}
+            <div class="match-line" title="its most one-of-a-kind line, nothing else in the game comes close to it">"{{ e.unique_line | mana }}"</div>
+            {% endif %}
+            <div class="more-lines"><a href="/search?q={{ e.name | urlencode }}&amp;blend={{ blend }}" title="{{ link_title }}">{{ link_text }}</a></div>
+        </div>
+        {% endfor %}
+    </div>
+{% endmacro %}
+
+{% block atlas_body %}
+    <h2>Strange words for ordinary jobs</h2>
+    <p class="results-blurb">Nothing in the game is worded like these cards, but plenty
+    of cards are tagged like them: a one-of-a-kind sentence doing a job the game does
+    all the time. Each quotes the line nothing else comes close to.</p>
+    {{ grid(strange_words, True, 4,
+            "what shares its job?",
+            "search this card with the slider on concepts, where its neighbours live") }}
+
+    <h2>Ordinary words for strange jobs</h2>
+    <p class="results-blurb">These read like a hundred other cards, but no other card
+    is tagged like them: familiar sentences adding up to a role nothing else fills.</p>
+    {{ grid(strange_jobs, False, 0,
+            "what says the same thing?",
+            "search this card with the slider on rules text, where its neighbours live") }}
+
+    <p class="atlas-note">Both scores are measured across the {{ total }} cards that
+    carry them, each against every other card at once. Rules text compares printed
+    lines; concepts compares the tags volunteers put on cards through
+    <a href="https://tagger.scryfall.com">Scryfall Tagger</a>.
+    <a href="/guide">How the machinery works.</a></p>
+{% endblock %}
