@@ -348,6 +348,21 @@ BLEND_DEFAULT = 2
 #already written for a database whose line_tags was never built
 LINE_TAGS = bool(os.environ.get("LINE_TAGS", "").strip())
 
+#the atlas is dark for the same reason and by the same switch: the pages work,
+#the copy is a first draft and ATLAS_RANK and ATLAS_COUNT are still guesses, so
+#it ships when it is finished rather than when it runs. unset means the routes
+#404, the nav link is absent and the sitemap never mentions them, which is
+#what keeps google from indexing a page nobody can reach. set ATLAS on a
+#staging service to work on it
+ATLAS = bool(os.environ.get("ATLAS", "").strip())
+
+
+@app.context_processor
+def feature_flags():
+    #base.html builds the nav for every page, so the flags have to reach every
+    #template rather than the handful that pass them explicitly
+    return {"atlas_on": ATLAS, "line_tags_on": LINE_TAGS}
+
 
 def anchor_vector(conn, oracle_id, dropped, picked=(), forced=()):
     #picked lines narrow the starting set to the tags those lines are about
@@ -1647,11 +1662,15 @@ def atlas_strange_lists():
 
 @app.route("/atlas")
 def atlas():
+    if not ATLAS:
+        abort(404)
     return render_template("atlas.html")
 
 
 @app.route("/atlas/two-kinds-of-strange")
 def atlas_strange():
+    if not ATLAS:
+        abort(404)
     data = atlas_strange_lists()
     return render_template("atlas_strange.html",
                            strange_words=data["strange_words"],
@@ -2091,7 +2110,10 @@ def sitemap():
     root = request.url_root
     out = ['<?xml version="1.0" encoding="UTF-8"?>',
            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-    for page in ("", "unique", "guide", "atlas", "atlas/two-kinds-of-strange"):
+    pages = ["", "unique", "guide"]
+    if ATLAS:
+        pages += ["atlas", "atlas/two-kinds-of-strange"]
+    for page in pages:
         out.append("<url><loc>" + root + page + "</loc></url>")
     for name in _sitemap_names["names"]:
         #quote() with its defaults mirrors the urlencode filter building the

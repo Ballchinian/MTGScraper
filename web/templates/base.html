@@ -61,7 +61,8 @@
                    both without anyone remembering the second copy #}
                 {% set nav_items %}
                     <a href="/unique">Unique cards</a>
-                    <a href="/atlas">Atlas</a>
+                    {# dark until the atlas is finished, see ATLAS in app.py #}
+                    {% if atlas_on %}<a href="/atlas">Atlas</a>{% endif %}
                     <a href="/guide">How it works</a>
                     {# leaves the site, so it carries the little box-and-arrow
                        (css, on target=_blank) and says so out loud for screen

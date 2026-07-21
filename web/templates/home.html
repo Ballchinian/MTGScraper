@@ -73,7 +73,8 @@
         {# the row future buttons slot into, one <a> each #}
         <div class="home-buttons">
             <a href="/unique">Unique Cards</a>
-            <a href="/atlas">Atlas</a>
+            {# dark until the atlas is finished, see ATLAS in app.py #}
+            {% if atlas_on %}<a href="/atlas">Atlas</a>{% endif %}
             <a href="/guide">How it works</a>
             <a href="https://discord.gg/kfjYbRYKbg" target="_blank" rel="noopener" aria-label="Discord (opens in a new tab)">Discord</a>
         </div>
