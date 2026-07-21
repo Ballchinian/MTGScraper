@@ -7,8 +7,10 @@ __pycache__/
 .vscode/
 
 .env
-finetune/
 .claude/
+
+finetune/*
+!finetune/README.md
 
 #my own notes
 TODO.md
