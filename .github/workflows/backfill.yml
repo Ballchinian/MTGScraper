@@ -1,0 +1,58 @@
+#fills lines.embedding_v2 with a trial model, so a new one can be judged and
+#browsed without touching the vectors the site is serving.
+#
+#this exists because the alternative is bad on every axis: embedding 60k lines
+#with a 300m model on a laptop cpu takes hours, and doing it in colab means
+#pasting a live DATABASE_URL into a google notebook. the runner already holds
+#both secrets, already installs cpu torch, and the daily update already proves
+#a full corpus embed finishes here.
+#
+#manual only. nothing about a trial should happen on a schedule, and the
+#column it writes is read by nobody until EMBED_COLUMN says so.
+
+name: backfill the trial embedding column
+
+on:
+    workflow_dispatch:
+        inputs:
+            model:
+                description: "hugging face repo to embed with, eg BallchinianMan/mtg-tagtuned-embeddinggemma-300m"
+                required: true
+            index:
+                description: "build the hnsw index when the fill completes"
+                type: boolean
+                default: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    #the full corpus on a cpu runner. the default 360 would be plenty on the
+    #evidence of the daily reseed, but a trial model is exactly when someone
+    #swaps in something bigger, and a job killed at 99% wastes the whole run
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: ingest/requirements.txt
+
+      #keyed on the model being filled, so trying a second one does not serve
+      #the first one's weights out of a stale cache
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/huggingface
+          key: backfill-${{ inputs.model }}
+
+      #the cpu wheel first, or the requirements step pulls a 2gb+ cuda build
+      #that a runner cannot use anyway
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -r ingest/requirements.txt
+
+      - run: python -m ingest.backfill_embeddings --model "${{ inputs.model }}" ${{ inputs.index && '--index' || '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}  #the trial model is in a private repo too
+          PYTHONUNBUFFERED: "1"
