@@ -64,10 +64,19 @@ same("CALIBRATION seed", assign_value("web/app.py", "CALIBRATION"), assign_value
 same("MECH_CALIBRATION seed", assign_value("web/app.py", "MECH_CALIBRATION"), assign_value("ingest/update.py", "MECH_CALIBRATION"))
 
 #the report bakeoff scores pairs the way the site does, with its own copies
-#of the two scoring functions
-for fn in ("line_weight", "mech_display"):
-    same(fn, func_dump("finetune/pairs_bakeoff.py", fn), func_dump("web/app.py", fn),
-         "between finetune/pairs_bakeoff.py and web/app.py")
+#of the two scoring functions.
+#
+#finetune/ is deliberately not on github (it is the training data and the hand
+#judged verdicts, ie the method), so this pair only runs where the folder
+#actually is. locally that is every time and the drift is still caught; in the
+#check workflow the folder is absent and there is nothing to compare, which
+#must not read as a failure
+if os.path.exists(os.path.join(ROOT, "finetune", "pairs_bakeoff.py")):
+    for fn in ("line_weight", "mech_display"):
+        same(fn, func_dump("finetune/pairs_bakeoff.py", fn), func_dump("web/app.py", fn),
+             "between finetune/pairs_bakeoff.py and web/app.py")
+else:
+    print("no finetune/ here, skipping the pairs_bakeoff drift check")
 
 if problems:
     for p in problems:

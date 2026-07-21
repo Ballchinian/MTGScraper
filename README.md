@@ -83,7 +83,7 @@ Each line of a card's rules text is treated as one ability, so lines get embedde
 
 ### Embeddings
 
-Every cleaned line goes through a fine tuned EmbeddingGemma model trained specifically on Magic rules text (the whole story of building it lives in `finetune/README.md`), which turns text into a normalized vector of 768 numbers where lines that mean similar things land close together, and unlike any off the shelf model, knows that "draw a card, then discard a card" and "discard a card: draw a card" are different things. That is what lets "you may draw a card unless that player pays {4}" match "they may pay {1}. If the player does, they draw a card".
+Every cleaned line goes through a fine tuned EmbeddingGemma model trained specifically on Magic rules text, which turns text into a normalized vector of 768 numbers where lines that mean similar things land close together, and unlike any off the shelf model, knows that "draw a card, then discard a card" and "discard a card: draw a card" are different things. That is what lets "you may draw a card unless that player pays {4}" match "they may pay {1}. If the player does, they draw a card".
 
 ### Ranking
 
@@ -104,14 +104,14 @@ Name search runs on the pg_trgm extension: exact match, then prefix, then substr
 
 The results page can report two things: a card that shouldn't be in the results (the flag under each card, which asks the user to say why in their own words, nobody is expected to name a better card off the top of their head) and a card that should have been there but isn't (the link in the results heading, which asks for the card's name). Missing card reports get diagnosed before anything is stored: when a filter is what's hiding the card, the reporter is told exactly which one on the spot and the report never enters the queue, because that isn't the model's fault. Real gaps land in the `feedback` table with the reason, the scores and the model version at report time.
 
-A review page at `/admin?key=...` (it only exists when the `ADMIN_KEY` environment variable is set on the web service) shows pending reports with the cards side by side, accept/reject buttons, and exports accepted ones in the markdown format of the eval files: misplaced reports become `finetune/triplets.md` negatives with the match left to fill in by hand, missing reports become `finetune/pairs.md` entries. Those files are the hand checked test sets the next model is graded against, so user complaints literally turn into the exam.
+A review page at `/admin?key=...` (it only exists when the `ADMIN_KEY` environment variable is set on the web service) shows pending reports with the cards side by side, accept/reject buttons, and exports accepted ones in the markdown format of the eval files: misplaced reports become triplet negatives with the match left to fill in by hand, missing reports become pair entries. Those files are the hand checked test sets the next model is graded against, so user complaints literally turn into the exam.
 
 ## Tech stack
 
 - **Backend:** Python / Flask
 - **Database:** Postgres + pgvector on Railway
 - **Frontend:** Jinja templates + vanilla JavaScript
-- **Similarity:** sentence-transformers (a fine-tuned EmbeddingGemma, see `finetune/README.md`), embedded at ingest time only
+- **Similarity:** sentence-transformers (a fine-tuned EmbeddingGemma), embedded at ingest time only
 - **Card data:** Scryfall bulk data (Oracle Cards), refreshed daily by GitHub Actions
 
 ## A typical search
