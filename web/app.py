@@ -409,6 +409,16 @@ def feature_flags():
     return {"atlas_on": ATLAS, "line_tags_on": LINE_TAGS}
 
 
+def card_has_attribution(conn, oracle_id):
+    #does the attribution know anything about this card at all? "this line owns
+    #no tags" and "nobody has ever run ingest/attribute.py here" both arrive as
+    #an empty result set, and they want opposite handling, so ask the card
+    return conn.execute("""
+        SELECT 1 FROM line_tags lt JOIN lines l ON l.id = lt.line_id
+        WHERE l.oracle_id = %s AND NOT l.whole LIMIT 1
+    """, (oracle_id,)).fetchone() is not None
+
+
 def anchor_vector(conn, oracle_id, dropped, picked=(), forced=()):
     #picked lines narrow the starting set to the tags those lines are about
     #(ingest/attribute.py works out which, card-level tags ride along with
@@ -446,10 +456,20 @@ def anchor_vector(conn, oracle_id, dropped, picked=(), forced=()):
         JOIN kept ON kept.tag = ct.tag
         WHERE ct.oracle_id = %s
     """, params).fetchall()
-    #a database whose line_tags hasn't been built yet would hand back nothing
-    #for every picked line and silently mute the concept axis, so fall back to
-    #the whole card rather than pretending the card has no concepts
-    if picked and not rows:
+    #an empty result here means one of two very different things, and telling
+    #them apart is what card_has_attribution is for. either the attribution has
+    #never run against this database, in which case falling back to the whole
+    #card is right and the alternative is silently muting the concept axis on
+    #every search. OR the picked line genuinely is not about anything, which is
+    #the normal state of a keyword line: Gishath's "Vigilance, trample, haste"
+    #owns none of its card's seven tags, they all belong to the combat damage
+    #trigger.
+    #
+    #in that second case the concept axis has nothing honest to say, so it sits
+    #the search out rather than quietly scoring on tags the user was just told
+    #do not apply. find_similar reads the empty norm and ranks on rules text
+    #alone, which is exactly what someone picking a keyword line is asking for
+    if picked and not rows and not card_has_attribution(conn, oracle_id):
         return anchor_vector(conn, oracle_id, dropped)
     tags = [r["tag"] for r in rows]
     weights = [r["weight"] for r in rows]
@@ -480,8 +500,13 @@ def anchor_chips(conn, oracle_id, dropped, picked=(), forced=()):
             JOIN lines l ON l.id = lt.line_id
             WHERE l.oracle_id = %s AND NOT l.whole AND l.line_text = ANY(%s)
         """, (oracle_id, list(picked))).fetchall()}
-        if not on_lines:
-            on_lines = None  #nothing attributed yet, so nothing is set aside
+        #an empty set is a real answer, not a missing one: a keyword line owns
+        #no tags, and setting every chip aside is exactly right for it. only
+        #fall back to showing them all when the attribution has never run here,
+        #or Gishath's "Vigilance, trample, haste" leaves all seven dinosaur
+        #tags lit as though they were about keywords
+        if not on_lines and not card_has_attribution(conn, oracle_id):
+            on_lines = None
     chips = []
     for r in rows:
         if r["tag"] in dropped:
@@ -1209,7 +1234,15 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
         #concept side has nothing to say, so it sits the round out rather than
         #dividing by a zero norm
         atags, aweights, anorm = anchor_vector(conn, oracle_id, dropped, picked, forced) if blend > 0 else ([], [], 0.0)
-        if blend > 0:
+        #NO ANCHOR VECTOR MEANS THE CONCEPT AXIS SITS OUT ENTIRELY, rather than
+        #scoring every candidate at zero and dragging the blend down with it.
+        #that used to be unreachable, since an anchor with no tags has no
+        #concept side to speak of anyway. picking a keyword line reaches it: the
+        #line owns no tags, so there is no vector, and the old behaviour halved
+        #every card's score and returned nothing at all above the cutoff.
+        #ranking on rules text alone is both what survives and what the person
+        #who clicked "Vigilance, trample, haste" was asking for
+        if blend > 0 and atags:
             have = {oid for oid, pairs in ranked}
             if atags:
                 #cards the lines never found, injected as candidates when their
@@ -1396,12 +1429,17 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             their_face = 0
             mech_pct = 0
             concept_only = True
-        #the badge answers "how good a match, given where the slider is":
-        #the pure mechanical percent at rest, and once the slider moves, the
-        #same blend the ordering uses - so the list always reads in
-        #descending order of the number shown. the two ingredients ride in
-        #the tooltip
-        if blend > 0:
+        #the badge is the SAME number the ordering and the cutoff use, which is
+        #the promise that makes the list read in descending order and nothing
+        #under the gate appear above the fold. the two ingredients ride in the
+        #tooltip.
+        #
+        #the atags check is what keeps that promise when a keyword line is
+        #picked: there is no anchor vector, so the ranking dropped to rules text
+        #alone above, and blending a zero concept score in here would badge a
+        #perfect textual match as 50% while the gate let it through on 100.
+        #the condition has to match the one guarding the ranking exactly
+        if blend > 0 and atags:
             percent = int(round((1 - blend) * mech_pct + blend * concept_pct))
         else:
             percent = mech_pct
@@ -1432,7 +1470,8 @@ def find_similar(oracle_id, picked, filters, min_pct, sort, offset=0, how_many=2
             "flip": c["layout"] == "flip",
             "scryfall_uri": c["scryfall_uri"],
             "percent": percent,
-            "blended": blend > 0,
+            #the tooltip only claims to break a blend apart when there was one
+            "blended": blend > 0 and bool(atags),
             "mech_pct": mech_pct,
             "concept_only": concept_only,
             "concept_pct": concept_pct,
