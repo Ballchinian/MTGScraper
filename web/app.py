@@ -1947,12 +1947,15 @@ def feedback():
                             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                          (kind, card["oracle_id"], card["name"], tag, reason,
                           "\n".join(picked), json.dumps(snap), model, ip))
+            #lead with what the USER is claiming, not with what the picker
+            #thinks. saying "the picker thinks that line IS about X" back to
+            #someone who just told you it is not reads as the site arguing
             if on_line:
-                said = "The picker thinks that line IS about " + tag + "."
+                said = "Logged: you say that line is NOT about " + tag + ", the picker kept it."
             else:
-                said = "The picker set " + tag + " aside for that line."
+                said = "Logged: you say that line IS about " + tag + ", the picker set it aside."
             return {"ok": True, "stored": True,
-                    "msg": said + " Logged as a disagreement. These become the labelled cards "
+                    "msg": said + " Disagreements like this become the labelled cards "
                            "the line picker is graded against."}
 
         #misplaced: the flagged card plus a few words on why it doesn't belong
