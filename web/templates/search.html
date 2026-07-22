@@ -109,8 +109,8 @@
                 <p class="line-hint">
                     {% if aside_count %}
                     concepts: the faded tags aren't what your highlighted {{ 'line' if picked_count == 1 else 'lines' }}
-                    {{ 'is' if picked_count == 1 else 'are' }} about, so the concepts side is ignoring them. it's a guess,
-                    so click one to put it back
+                    {{ 'is' if picked_count == 1 else 'are' }} about, so the concepts side is ignoring them.
+                    <strong>this is a guess and it gets things wrong</strong>, so click one to put it back
                     {% elif dropped_count %}
                     concepts: the crossed out tags are switched off, the concepts side is ignoring them
                     {% elif line_tags_on %}
@@ -118,6 +118,12 @@
                     narrow them to that ability, or click one to switch it off
                     {% else %}
                     concepts: the concepts score searches these community tags. click one to switch it off
+                    {% endif %}
+                    {# the report only makes sense once a line is picked: with no
+                       pick every tag is on, and "this tag is wrong for the whole
+                       card" is a complaint for tagger rather than for us #}
+                    {% if picked_count and line_tags_on %}
+                    &mdash; <a href="#" id="report-tag" class="report-open">a tag on the wrong line?</a>
                     {% endif %}
                 </p>
                 {% endif %}
@@ -185,6 +191,15 @@
                     <input id="report-input" type="text" placeholder="type a card name..." aria-label="the card you expected" autocomplete="off">
                     <div id="report-suggest"></div>
                 </span>
+                {# the tag report picks from the card's own tags rather than
+                   typing one: the state each is in right now is what tells the
+                   server which way the complaint runs, so it has to be one of
+                   these exact slugs #}
+                <select id="report-tag-pick" hidden aria-label="which tag is on the wrong line">
+                    {% for chip in tag_chips %}
+                    <option value="{{ chip.tag }}">{{ chip.tag }}{% if chip.state == 'aside' %} (set aside){% elif chip.state == 'kept' %} (put back by you){% elif chip.state == 'off' %} (switched off){% else %} (kept){% endif %}</option>
+                    {% endfor %}
+                </select>
                 <textarea id="report-reason" rows="2" aria-label="why you're reporting this"></textarea>
                 <button id="report-send">Send report</button>
                 <button id="report-cancel">Cancel</button>
@@ -599,6 +614,7 @@
         var reportReason = document.getElementById("report-reason");
         var reportMsg = document.getElementById("report-msg");
         var reportSuggest = document.getElementById("report-suggest");
+        var reportTagPick = document.getElementById("report-tag-pick");
         var reportKind = "";
         var flagged = null;  //{id, name, el} of the card a misplaced report is about
 
@@ -608,7 +624,10 @@
             }
             reportKind = kind;
             flagged = flag || null;
-            if (flagged) {
+            if (kind == "tag") {
+                reportTitle.textContent = "Which tag is on the wrong line? Whether it should be there or shouldn't is worked out from where it sits now, so just pick it.";
+                reportReason.placeholder = "(optional) which line does it really belong to?";
+            } else if (flagged) {
                 flagged.el.classList.add("flagged");
                 reportTitle.textContent = 'You flagged "' + flagged.name + '" as a bad match. Please put a small description about why it\'s bad.';
                 reportReason.placeholder = "why is it a bad match?";
@@ -616,17 +635,23 @@
                 reportTitle.textContent = "Which card should be here? It gets checked against your filters first, and only real gaps reach the log.";
                 reportReason.placeholder = "(optional) anything else worth knowing?";
             }
-            //missing reports name a card, misplaced ones only explain
-            reportPick.hidden = (kind == "misplaced");
+            //three shapes: missing names a card, misplaced only explains, tag
+            //picks from the card's own tags
+            reportPick.hidden = (kind != "missing");
+            if (reportTagPick) {
+                reportTagPick.hidden = (kind != "tag");
+            }
             reportBar.hidden = false;
             reportMsg.hidden = true;
             reportInput.value = "";
             reportReason.value = "";
             reportBar.scrollIntoView({behavior: "smooth", block: "nearest"});
-            if (kind == "misplaced") {
-                reportReason.focus();
-            } else {
+            if (kind == "missing") {
                 reportInput.focus();
+            } else if (kind == "tag" && reportTagPick) {
+                reportTagPick.focus();
+            } else {
+                reportReason.focus();
             }
         }
 
@@ -650,6 +675,15 @@
             e.preventDefault();
             openReportBar("missing", null);
         };
+
+        //only rendered when a line is picked, so it is absent most of the time
+        var reportTagLink = document.getElementById("report-tag");
+        if (reportTagLink) {
+            reportTagLink.onclick = function(e) {
+                e.preventDefault();
+                openReportBar("tag", null);
+            };
+        }
 
         document.getElementById("report-cancel").onclick = closeReportBar;
 
@@ -692,6 +726,14 @@
                     return;
                 }
                 body.got_id = flagged.id;
+            } else if (reportKind == "tag") {
+                //no reason required: the disagreement is the report, and which
+                //way it runs is read off the attribution rather than typed
+                body.tag = reportTagPick ? reportTagPick.value : "";
+                if (!body.tag) {
+                    showReportMsg("Pick which tag looks wrong first.", false);
+                    return;
+                }
             } else {
                 body.expected = reportInput.value.trim();
                 if (!body.expected) {

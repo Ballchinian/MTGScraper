@@ -1832,7 +1832,7 @@ def feedback():
     #because that's not the model's fault
     body = request.get_json(silent=True) or {}
     kind = body.get("kind", "")
-    if kind not in ("missing", "misplaced"):
+    if kind not in ("missing", "misplaced", "tag"):
         return {"ok": False, "stored": False, "msg": "That report didn't make sense to the server, sorry."}
 
     card = find_card(request.args.get("q", ""))
@@ -1920,6 +1920,41 @@ def feedback():
             return {"ok": True, "stored": True,
                     "msg": "Thanks for the input. Reports like this grade the next model."}
 
+        #tag: the line picker got an attribution wrong. WHICH WAY IT IS WRONG IS
+        #NOT ASKED, it is looked up: the tag is either on the picked line right
+        #now or it is not, and that decides whether the complaint is "you set
+        #this aside and the line IS about it" or "you kept this and the line is
+        #NOT about it". asking the user would be a second thing to get right,
+        #and the answer is already in the database
+        if kind == "tag":
+            tag = str(body.get("tag", "")).strip()[:100]
+            if not tag:
+                return {"ok": False, "stored": False, "msg": "Pick which tag looks wrong first."}
+            if not conn.execute("""SELECT 1 FROM card_tags WHERE oracle_id = %s AND tag = %s
+                                   AND NOT inherited""", (card["oracle_id"], tag)).fetchone():
+                return {"ok": False, "stored": False,
+                        "msg": "That tag isn't on " + card["name"] + ", try reloading the page."}
+            if not picked:
+                return {"ok": False, "stored": False,
+                        "msg": "Highlight the line you think this tag belongs to (or doesn't) first."}
+            on_line = conn.execute("""
+                SELECT 1 FROM line_tags lt JOIN lines l ON l.id = lt.line_id
+                WHERE l.oracle_id = %s AND NOT l.whole AND l.line_text = ANY(%s) AND lt.tag = %s
+            """, (card["oracle_id"], list(picked), tag)).fetchone() is not None
+            snap["tag_was"] = "kept" if on_line else "aside"
+            conn.execute("""INSERT INTO feedback (kind, anchor_id, anchor_name, tag, reason,
+                                                  picked_lines, filters, embed_model, ip)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                         (kind, card["oracle_id"], card["name"], tag, reason,
+                          "\n".join(picked), json.dumps(snap), model, ip))
+            if on_line:
+                said = "The picker thinks that line IS about " + tag + "."
+            else:
+                said = "The picker set " + tag + " aside for that line."
+            return {"ok": True, "stored": True,
+                    "msg": said + " Logged as a disagreement. These become the labelled cards "
+                           "the line picker is graded against."}
+
         #misplaced: the flagged card plus a few words on why it doesn't belong
         try:
             got_id = str(uuid.UUID(str(body.get("got_id", ""))))
@@ -1991,6 +2026,29 @@ def report_markdown(r, line_texts, n):
             mode += ", concept score " + str(snap["concept_pct"]) + "%"
         mode += ") - consider axis2.md"
 
+    #a tag report is not a pairs.md entry at all. it belongs in the LABELS dict
+    #in finetune/attribution_eval.py, keyed by card name and LINE INDEX, so it
+    #is emitted in that shape instead: the index the picked line actually has,
+    #and which way the disagreement runs. the line index is what the eval reads,
+    #and it is not stored on the report (the text is), so it is looked up here
+    if r["kind"] == "tag":
+        idx = "?"
+        for i, t in enumerate(line_texts.get(r["anchor_id"], [])):
+            if anchor_lines and t == anchor_lines[0]:
+                idx = str(i)
+                break
+        try:
+            was = json.loads(r["filters"] or "{}").get("tag_was", "?")
+        except ValueError:
+            was = "?"
+        verb = "should NOT be on" if was == "kept" else "SHOULD be on"
+        out = "    #" + r["anchor_name"] + " line " + idx + ": " + r["tag"] + " " + verb + " it"
+        out += "  (user report " + day + ")\n"
+        if r["reason"]:
+            out += "    #  they said: " + r["reason"] + "\n"
+        out += '    "' + r["anchor_name"] + '": {' + idx + ": {...}},  #" + r["tag"] + "\n"
+        return out
+
     out = str(n) + ".\n"
     out += "    **Anchor:** " + r["anchor_name"] + " - " + q(anchor_lines) + "\n"
     if r["kind"] == "misplaced":
@@ -2036,29 +2094,43 @@ def admin():
     accepted = []
     triplet_md = []
     pair_md = []
+    tag_md = []
     for r in rows:
         cards = [card_bit("anchor (searched)", r["anchor_id"], r["anchor_name"], None)]
         if r["expected_id"]:
             cards.append(card_bit("should appear", r["expected_id"], r["expected_name"], r["expected_pct"]))
         if r["got_id"]:
             cards.append(card_bit("shouldn't be here", r["got_id"], r["got_name"], r["got_pct"]))
+        #a tag report has no second card, its subject is a slug and a direction.
+        #the direction was recorded at report time, because the attribution it
+        #describes can be rebuilt before anyone reviews it
+        tag_was = ""
+        if r["kind"] == "tag":
+            try:
+                tag_was = json.loads(r["filters"] or "{}").get("tag_was", "")
+            except ValueError:
+                tag_was = ""
         view = {
             "id": r["id"], "kind": r["kind"], "cards": cards, "reason": r["reason"],
             "created": r["created_at"].strftime("%Y-%m-%d %H:%M"),
             "picked": r["picked_lines"].replace("\n", "  |  "),
             "filters": r["filters"], "model": r["embed_model"], "ip": r["ip"],
+            "tag": r["tag"], "tag_was": tag_was,
         }
         if r["status"] == "pending":
             pending.append(view)
         else:
             accepted.append(view)
-            if r["kind"] == "misplaced":
+            if r["kind"] == "tag":
+                tag_md.append(report_markdown(r, line_texts, len(tag_md) + 1))
+            elif r["kind"] == "misplaced":
                 triplet_md.append(report_markdown(r, line_texts, len(triplet_md) + 1))
             else:
                 pair_md.append(report_markdown(r, line_texts, len(pair_md) + 1))
 
     return render_template("admin.html", key=ADMIN_KEY, pending=pending, accepted=accepted,
-                           triplet_md="\n".join(triplet_md), pair_md="\n".join(pair_md))
+                           triplet_md="\n".join(triplet_md), pair_md="\n".join(pair_md),
+                           tag_md="\n".join(tag_md))
 
 
 @app.route("/admin/act", methods=["POST"])

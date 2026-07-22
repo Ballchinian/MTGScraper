@@ -24,6 +24,14 @@
             </div>
             {% endfor %}
         </div>
+        {# a tag report's whole subject is the slug and which way it was wrong,
+           and the direction is the bit that decides what the label becomes #}
+        {% if r.kind == 'tag' %}
+        <div class="fb-meta"><strong>tag: {{ r.tag }}</strong>
+            {% if r.tag_was == 'kept' %}&mdash; the picker KEPT it on the picked line, user says it does not belong
+            {% elif r.tag_was == 'aside' %}&mdash; the picker SET IT ASIDE, user says the line IS about it
+            {% else %}&mdash; direction unrecorded{% endif %}</div>
+        {% endif %}
         {% if r.reason %}<div class="fb-meta">reason: "{{ r.reason }}"</div>{% endif %}
         {% if r.picked %}<div class="fb-meta">picked lines: {{ r.picked }}</div>{% endif %}
         <div class="fb-meta">filters: {{ r.filters }}</div>
@@ -53,9 +61,18 @@
     <h3>missing reports, for finetune/pairs.md</h3>
     <div class="fb-export"><pre>{{ pair_md }}</pre></div>
     {% endif %}
+    {% if tag_md %}
+    {# these do not go in an md file at all: they belong in the LABELS dict in
+       finetune/attribution_eval.py, which is the only exam testing which LINE
+       a tag lands on and currently has three hand labelled cards #}
+    <h3>tag reports, for the LABELS dict in finetune/attribution_eval.py</h3>
+    <div class="fb-export"><pre>{{ tag_md }}</pre></div>
+    {% endif %}
     {% for r in accepted %}
     <div class="fb-done-row">
-        <span>#{{ r.id }} · {{ r.kind }} · {{ r.cards[0].name }} -> {{ r.cards[1].name }}</span>
+        {# a tag report has one card, not two: its second subject is a slug #}
+        <span>#{{ r.id }} · {{ r.kind }} · {{ r.cards[0].name }} -&gt;
+            {% if r.kind == 'tag' %}{{ r.tag }}{% else %}{{ r.cards[1].name }}{% endif %}</span>
         <form method="post" action="/admin/act?key={{ key }}">
             <input type="hidden" name="id" value="{{ r.id }}">
             <button name="action" value="archived" class="fb-quiet">copied, archive it</button>

@@ -279,3 +279,13 @@ CREATE TABLE IF NOT EXISTS feedback (
     status        text NOT NULL DEFAULT 'pending',
     created_at    timestamptz DEFAULT now()
 );
+
+--a third kind of report, 'tag': the line picker set a tag aside that the
+--picked line IS about, or kept one it is NOT about. those are complaints about
+--ingest/attribute.py rather than about the model's ranking, and they are the
+--only feedback that can grow finetune/attribution_eval.py, which has three
+--hand labelled cards and is the one exam testing WHICH LINE a tag lands on.
+--the tag slug goes here. which direction the complaint runs is read off the
+--attribution at review time rather than trusted from the form, so a report
+--stays readable even if the attribution is rebuilt before anyone looks at it
+ALTER TABLE feedback ADD COLUMN IF NOT EXISTS tag text NOT NULL DEFAULT '';
