@@ -39,7 +39,7 @@
                 <span class="percent">82% 
                     <button class="guide-info" aria-label="what the percent means"
                         data-title="How close the match is"
-                        data-body="80 or higher means a real match. With the slider away from either end this number is a blend of both scores, rules text and concepts, and the list is always ordered by the number you can see. Hover it on a real result and the tooltip breaks the blend back into its two halves.">i</button>
+                        data-body="70 or higher means a real match. The number is the average of both scores, rules text and concepts, and the list is always ordered by the number you can see. Hover it on a real result and the tooltip breaks it back into its two halves.">i</button>
                 </span> 
             </div>
             <div class="result-price"><span class="price-figure much-cheaper">$0.25<span class="price-vs">&darr;</span></span><span class="result-rank">#412<span class="rank-vs">&uarr;</span></span>
@@ -68,19 +68,20 @@
     </dialog>
     {% endif %}
 
-    <h2>The slider: rules text vs concepts</h2>
-    <p>Two ways for cards to be similar, one slider between them.</p>
+    <h2>Two kinds of similar, counted together</h2>
+    <p>Every result is scored twice, and the two scores are averaged.</p>
     <ul>
-        <li><strong>rules text</strong> (the left end): cards whose printed text works the
-            same way. Search Sol Ring, get the other rocks that tap for two.</li>
-        <li><strong>concepts</strong> (the right end): cards built around the same idea, from
-            community tags. Search Sol Ring, get the whole mana-rock family.</li>
-        <li>In between, both count. The badge on every card shows the blend that ordered the
-            list, and the list is always in order of the number you see. The slider starts in
-            the middle, an even split, because either end alone is a specialist's view.</li>
+        <li><strong>rules text</strong>: cards whose printed text works the same way. Search
+            Sol Ring, get the other rocks that tap for two.</li>
+        <li><strong>concepts</strong>: cards built around the same idea, from community tags.
+            Search Sol Ring, get the whole mana-rock family.</li>
+        <li>The badge on every card is the average of the two, and the list is always in order
+            of the number you see. Hover it to break the number back into its halves.</li>
     </ul>
-    <p>The slider remembers where you left it. Left to right, the five stops let concepts
-    count for 0, 25, 50, 75, then all 100 percent of the score.</p>
+    <p>There used to be a slider here to weight one against the other. It is gone, because
+    testing it settled the question: an even split beats every other setting, including both
+    ends. Either one alone is a specialist's view, and the two together catch what neither
+    does on its own.</p>
     <p>Weaker matches aren't thrown away. The button under the results opens them ten
     percentage points at a time, saying which range it is about to show, and each batch is
     labelled where it starts. That is deliberate: it keeps the sorts honest. Sorting a

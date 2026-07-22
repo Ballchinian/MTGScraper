@@ -240,6 +240,30 @@ def line_weight(count):
     return 1.0 / (1.0 + math.log10(count / 5.0))
 
 
+#which column the searches read their vectors out of. the point is that trying
+#a new embedding model stops being a one way door: the new vectors go into
+#embedding_v2 (see common/schema.sql), this flips the site over to them, and
+#unsetting it flips straight back with the old numbers still sitting there.
+#
+#the value lands INSIDE sql strings, so it is checked against a fixed list
+#rather than trusted. anything else and we would be one typo in a railway
+#variable away from an injection point on every search.
+#
+#defined UP HERE, above the calibration, because load_calibration reads it to
+#decide which map belongs to the column being served
+EMBED_COLUMNS = ("embedding", "embedding_v2")
+
+
+def embed_column():
+    col = os.environ.get("EMBED_COLUMN", "").strip() or "embedding"
+    if col not in EMBED_COLUMNS:
+        raise ValueError("EMBED_COLUMN must be one of " + ", ".join(EMBED_COLUMNS))
+    return col
+
+
+EMBED_COL = embed_column()
+
+
 #axis 2: how conceptually close two cards are, scored from the community
 #tags the ingest bakes into card_tags/tags. the raw cosine lives in a
 #compressed band, this map turns it into the percent the site shows, and
@@ -283,12 +307,26 @@ def load_calibration():
     #the maps the ingest wrote into meta replace the seeds above, so the
     #percents the site shows always belong to the model that made the
     #vectors. a database the ingest has never run against has no meta rows
-    #(maybe no meta table), then the seeds hold
+    #(maybe no meta table), then the seeds hold.
+    #
+    #a trial column needs its OWN map, or every percent on the page is a lie:
+    #cosines sit in a different band per model, and the meta row belongs to
+    #whichever model filled lines.embedding. so when EMBED_COLUMN points
+    #somewhere else, prefer a key suffixed with it, and fall back to the
+    #shared one where a trial has not been calibrated yet. measured
+    #2026-07-22: without this a near verbatim match read 62% under the trial
+    #model where the refit puts it at 77%
     global CALIBRATION, MECH_CALIBRATION
+    suffix = "" if EMBED_COL == "embedding" else "_" + EMBED_COL
     try:
         with pool.connection() as conn:
             for key in ("concept_calibration", "mech_calibration"):
-                row = conn.execute("SELECT value FROM meta WHERE key = %s", (key,)).fetchone()
+                row = None
+                if suffix:
+                    row = conn.execute("SELECT value FROM meta WHERE key = %s",
+                                       (key + suffix,)).fetchone()
+                if row is None:
+                    row = conn.execute("SELECT value FROM meta WHERE key = %s", (key,)).fetchone()
                 if row:
                     pts = [(float(x), float(y)) for x, y in json.loads(row["value"])]
                     if key == "concept_calibration":
@@ -355,27 +393,6 @@ LINE_TAGS = bool(os.environ.get("LINE_TAGS", "").strip())
 #what keeps google from indexing a page nobody can reach. set ATLAS on a
 #staging service to work on it
 ATLAS = bool(os.environ.get("ATLAS", "").strip())
-
-
-#which column the searches read their vectors out of. the point is that trying
-#a new embedding model stops being a one way door: the new vectors go into
-#embedding_v2 (see common/schema.sql), this flips the site over to them, and
-#unsetting it flips straight back with the old numbers still sitting there.
-#
-#the value lands INSIDE sql strings, so it is checked against a fixed list
-#rather than trusted. anything else and we would be one typo in a railway
-#variable away from an injection point on every search
-EMBED_COLUMNS = ("embedding", "embedding_v2")
-
-
-def embed_column():
-    col = os.environ.get("EMBED_COLUMN", "").strip() or "embedding"
-    if col not in EMBED_COLUMNS:
-        raise ValueError("EMBED_COLUMN must be one of " + ", ".join(EMBED_COLUMNS))
-    return col
-
-
-EMBED_COL = embed_column()
 
 
 @app.context_processor
@@ -842,7 +859,11 @@ def tier_cut(blend):
     #real quality boundary there (same set of cards the old raw-90 cutoff
     #kept), and pure concepts shows the calibrated concept score, where good
     #matches also read 80+. the mixed detents show an average of two axes,
-    #and averages rarely reach 80, so they sit at 70
+    #and averages rarely reach 80, so they sit at 70.
+    #
+    #since the slider was fixed at the middle this only ever returns 70. the
+    #branch stays because it is the reason 70 is right, and deleting it would
+    #leave a bare number nobody could argue with
     return 70 if 0 < blend < len(BLEND_WEIGHTS) - 1 else 80
 
 
@@ -875,18 +896,22 @@ def remember_currency(resp):
 
 
 def read_blend():
-    #the slider's detent, 0 (pure rules text) through 4 (pure concepts).
-    #the url wins, then the remembered cookie, then the middle. people who like
-    #the slider somewhere tend to want it there tomorrow too, so the preference
-    #survives closing the browser
-    raw = request.args.get("blend")
-    if raw is None:
-        raw = request.cookies.get("blend", str(BLEND_DEFAULT))
-    try:
-        b = int(raw)
-    except ValueError:
-        b = BLEND_DEFAULT
-    return max(0, min(b, len(BLEND_WEIGHTS) - 1))
+    #FIXED AT THE MIDDLE, 2026-07-22. the slider is gone from the page.
+    #
+    #it was the site's most misunderstood control: a friend's review read it as
+    #an either/or and suggested replacing it with a radio, which would have
+    #deleted the feature rather than explained it. the answer turned out to be
+    #that the choice never needed making. an even blend of the two axes is
+    #better than either end on its own, and better than any other detent, so
+    #the honest move is to stop asking and just do it.
+    #
+    #the machinery underneath is deliberately left alone: BLEND_WEIGHTS,
+    #tier_cut and the two-axis scoring all still work off this number, so
+    #reviving the slider means putting the input back and restoring the four
+    #lines below, not rebuilding the ranking. a stale blend= in an old link is
+    #ignored rather than honoured, which is what makes every shared url agree
+    #about what it shows
+    return BLEND_DEFAULT
 
 
 def read_picked():
@@ -1496,10 +1521,11 @@ def search():
                                          tag_chips=chips, dropped_count=sum(1 for c in chips if c["state"] == "off"),
                                          aside_count=sum(1 for c in chips if c["state"] == "aside"),
                                          line_tags_on=LINE_TAGS))
-    #an explicit slider position becomes the remembered one. moving it back
-    #to rules text remembers that too, so there is no stuck state
-    if request.args.get("blend") is not None:
-        resp.set_cookie("blend", str(blend), max_age=60 * 60 * 24 * 365, samesite="Lax")
+    #the blend cookie is gone with the slider. it is actively DELETED rather
+    #than left alone, or anyone who moved the slider before today keeps a
+    #stale preference in their browser forever, invisible and doing nothing
+    if request.cookies.get("blend") is not None:
+        resp.delete_cookie("blend", samesite="Lax")
     return resp
 
 

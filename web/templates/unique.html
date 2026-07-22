@@ -17,7 +17,9 @@
        the repeat button, and pressing enter in a field deals too because the
        form's submit handler is the dealer #}
     <form id="unique-form" class="filter-bar">
-        <label class="blend-slider" title="Rules text: no other card's printed text comes close | Concepts: no other card is tagged like it">rules text <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
+        {# the slider went with /search's on 2026-07-22. uniqueness now always
+           blends both axes evenly: a card is unique when no other card's text
+           comes close AND nothing else is tagged like it #}
         {% include "_filters.html" %}
     </form>
 

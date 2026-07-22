@@ -137,7 +137,10 @@
             {% if request.args.get('yestags') %}
             <input type="hidden" name="yestags" value="{{ request.args.get('yestags') }}">
             {% endif %}
-            <label class="blend-slider" title="Rules text: cards whose printed text works the same way | Concepts: cards built around the same idea (from community tags)">rules text <input type="range" name="blend" min="0" max="4" step="1" value="{{ blend }}"> concepts</label>
+            {# the rules text / concepts slider was here until 2026-07-22.
+               an even blend of the two axes beat every other position of it,
+               including both ends, so the control was asking a question with
+               one right answer. see read_blend in app.py #}
             {% include "_filters.html" %}
             {# sort and apply ride the extra filters line, out of the filter
                box's way, where the sort list has room for its options #}
@@ -208,7 +211,7 @@
                     </a>
                     <button class="report-flag" data-id="{{ r.oracle_id }}" data-name="{{ r.name }}" title="shouldn't be here? report this as a bad match">?</button>
                 </div>
-                <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="rules text {{ r.mech_pct }}% and concept {{ r.concept_pct }}%, blended for your slider position"{% endif %}>{{ r.percent }}%</span></div>
+                <div class="result-name">{{ r.name }} <span class="percent{% if r.concept_only %} concept{% endif %}"{% if r.blended %} title="rules text {{ r.mech_pct }}%, concepts {{ r.concept_pct }}%, evenly blended"{% endif %}>{{ r.percent }}%</span></div>
                 {% if r.price or r.rank %}<div class="result-price"><span class="price-figure {{ r.price_vs }}"{% if r.price_vs %} title="{{ r.price_vs.replace('-', ' ') }} than {{ card.name }} at {{ card.price }}"{% endif %}>{{ r.price }}{% if r.price_vs %}<span class="price-vs">{{ '↓' if 'cheaper' in r.price_vs else '↑' }}</span>{% endif %}</span>{% if r.rank %}<span class="result-rank" title="edhrec rank, 1 is the most played card in commander">{{ r.rank }}{% if r.rank_vs %}<span class="rank-vs" title="{{ 'more' if r.rank_vs == 'more-played' else 'less' }} played than {{ card.name }} at {{ card.rank }}">{{ '↑' if r.rank_vs == 'more-played' else '↓' }}</span>{% endif %}</span>{% endif %}</div>{% endif %}
                 {% if r.their_line %}
                 <div class="match-line" title="matches your card's line: {{ r.our_line }}{% if r.matched_back %} (printed on the back face, shown here){% endif %}">"{{ r.their_line | mana }}"</div>
@@ -364,7 +367,7 @@
             var name = el("div", "result-name", div, r.name + " ");
             var pct = el("span", "percent" + (r.concept_only ? " concept" : ""), name, r.percent + "%");
             if (r.blended) {
-                pct.title = "rules text " + r.mech_pct + "% and concept " + r.concept_pct + "%, blended for your slider position";
+                pct.title = "rules text " + r.mech_pct + "%, concepts " + r.concept_pct + "%, evenly blended";
             }
             if (r.price || r.rank) {
                 var price = el("div", "result-price", div);
